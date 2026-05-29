@@ -1,0 +1,50 @@
+# modalidades.yaml — PNCP codigoModalidadeContratacao 字典
+# 来源: PNCP Swagger / Lei 14.133/2021 / docs/01_爬取来源设计.md
+# 用途: fetcher 循环遍历 modalidade 时引用此清单
+
+modalidades:
+  - codigo: 1
+    nome_pt: "Leilão - Eletrônico"
+    nome_zh: "电子拍卖"
+  - codigo: 2
+    nome_pt: "Diálogo Competitivo"
+    nome_zh: "竞争性对话"
+  - codigo: 3
+    nome_pt: "Concurso"
+    nome_zh: "竞赛"
+  - codigo: 4
+    nome_pt: "Concorrência - Eletrônica"
+    nome_zh: "电子公开招标"
+  - codigo: 5
+    nome_pt: "Concorrência - Presencial"
+    nome_zh: "现场公开招标"
+  - codigo: 6
+    nome_pt: "Pregão - Eletrônico"
+    nome_zh: "电子反向拍卖(最常见)"
+  - codigo: 7
+    nome_pt: "Pregão - Presencial"
+    nome_zh: "现场反向拍卖"
+  - codigo: 8
+    nome_pt: "Dispensa de Licitação"
+    nome_zh: "免标(直采)"
+  - codigo: 9
+    nome_pt: "Inexigibilidade"
+    nome_zh: "不可招标(独家来源)"
+  - codigo: 10
+    nome_pt: "Manifestação de Interesse"
+    nome_zh: "意向征集"
+  - codigo: 11
+    nome_pt: "Pré-qualificação"
+    nome_zh: "资格预审"
+  - codigo: 12
+    nome_pt: "Credenciamento"
+    nome_zh: "资质认证"
+  - codigo: 13
+    nome_pt: "Leilão - Presencial"
+    nome_zh: "现场拍卖"
+
+# fetcher 默认遍历哪些 modalidade
+# 裁掉:
+#   8/9 — F001/F002 硬过滤命中
+#   10/11 — 流程性公告,非招标本体
+default_iter: [1, 2, 3, 4, 5, 6, 7, 12, 13]

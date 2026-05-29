@@ -1,0 +1,17 @@
+# regions.yaml — UF(州)→ macro region 映射,以及 GDP 分层
+# 用途: src/enrichers 把 uf 富化为 region_macro / region_gdp_tier
+# 见 docs/02_字段拓展设计.md 第 2.2 节
+
+# 五大区(IBGE 官方划分)
+macro_regions:
+  Norte:        [AC, AP, AM, PA, RO, RR, TO]
+  Nordeste:     [AL, BA, CE, MA, PB, PE, PI, RN, SE]
+  Centro-Oeste: [DF, GO, MT, MS]
+  Sudeste:      [ES, MG, RJ, SP]
+  Sul:          [PR, RS, SC]
+
+# GDP 分层(粗略,业务可调整;来源:IBGE 2023 名义 GDP 排名)
+gdp_tiers:
+  high:    [SP, RJ, MG, RS, PR]
+  middle:  [SC, BA, DF, GO, ES, PE, CE]
+  low:     [AM, PA, MA, MT, MS, PB, RN, AL, PI, SE, RO, AC, AP, RR, TO]

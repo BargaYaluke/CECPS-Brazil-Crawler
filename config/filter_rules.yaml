@@ -1,0 +1,111 @@
+# filter_rules.yaml — 过滤与标注规则的单一事实源
+# 见 CLAUDE.md 第 5 节 / P3 任务规范
+#
+# 命中流程:
+#   evaluate(data) 跑两段:
+#     1. hard_filters 任一命中 → keep=False,带 reason / hit_rule_id
+#     2. soft_tags 全跑一遍累积命中的 tag(keep 仍为 True)
+#   re_evaluate(data, edital_text) 拿到 PDF 文本后,只重跑涉及 edital_text 的
+#   F003/F004/F005/F006(F001/F002/T*** 已经在第一遍判过)
+#
+# 字段约定:
+#   id            规则编号(写入 filter_rule_id 字段)
+#   name          英文短名,日志用
+#   field         主字段
+#   fallback_field 主字段为空时用的备用字段
+#   match_type    contains_any / regex_any / equals / in_list
+#   keywords      列表(contains_any / equals / in_list 用,前置 normalize)
+#   patterns      列表(regex_any 用,**不做 normalize**)
+#   reason        命中后的人读理由(写 filtered_log)
+#   set_field     仅 soft_tags:命中后给 Contratacao 的哪个字段赋值
+#   set_value     仅 soft_tags:赋什么值
+#   label_zh      中文标签名(给 Excel 显示用)
+
+# ─── 硬过滤(命中即丢弃 → filtered_log)─────────────────────────────────
+hard_filters:
+  - id: F001
+    name: dispensa
+    field: modalidade_nome
+    match_type: contains_any
+    keywords:
+      - "Dispensa"
+    reason: "免标/直接采购,金额过小,中企无价值"
+
+  - id: F002
+    name: inexigibilidade
+    field: modalidade_nome
+    match_type: contains_any
+    keywords:
+      - "Inexigibilidade"
+    reason: "唯一性采购,定向供应商"
+
+  - id: F003
+    name: me_epp_exclusivo
+    field: amparo_legal_nome
+    fallback_field: edital_text
+    match_type: contains_any
+    keywords:
+      - "Exclusiva ME/EPP"
+      - "exclusivo para ME"
+      - "exclusivo para EPP"
+      - "exclusiva para microempresa"
+    reason: "中小微企业专属,外资排除"
+
+  - id: F004
+    name: cota_reservada
+    field: edital_text
+    match_type: contains_any
+    keywords:
+      - "Cota Reservada"
+      - "cota de reserva"
+      - "cota reservada"
+    reason: "保留份额给特定群体"
+
+  - id: F005
+    name: ppb_ipb
+    field: edital_text
+    match_type: regex_any
+    patterns:
+      - '\bPPB\b'
+      - '\bIPB\b'
+      - 'Processo Produtivo Básico'
+    reason: "本地生产要求,外资难符合"
+
+  - id: F006
+    name: prazo_exiguo
+    field: edital_text
+    match_type: contains_any
+    keywords:
+      - "Prazo de Entrega Exíguo"
+      - "prazo exíguo"
+      - "entrega exígua"
+    reason: "交付期过短,跨境企业难赶上"
+
+# ─── 软标注(命中只打 tag,记录保留)────────────────────────────────────
+soft_tags:
+  - id: T001
+    field: modalidade_nome
+    match_type: contains_any
+    keywords:
+      - "Credenciamento"
+    set_field: is_long_term_opportunity
+    set_value: true
+    label_zh: "长期机会(认证入库制)"
+
+  - id: T002
+    field: modalidade_nome
+    match_type: contains_any
+    keywords:
+      - "Concorrência"
+    set_field: is_competitive_bid
+    set_value: true
+    label_zh: "竞争性招标"
+
+  - id: T003
+    field: modalidade_nome
+    match_type: contains_any
+    keywords:
+      - "Pregão Eletrônico"
+    set_field: is_e_auction
+    set_value: true
+    label_zh: "电子反向拍卖"

@@ -1,0 +1,53 @@
+# ─── Python ──────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ─── 虚拟环境 ────────────────────────────────────────────────────────────
+.venv/
+venv/
+env/
+
+# ─── 环境变量 / 凭据(★ 禁止提交) ──────────────────────────────────────
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+credentials.json
+
+# ─── IDE / OS ────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ─── 测试 / 静态分析缓存 ────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ─── 项目数据(★ 不提交爬取产物与审计日志) ──────────────────────────
+data/raw/
+data/filtered_log/*
+!data/filtered_log/.gitkeep
+data/exports/
+*.db
+*.sqlite
+*.sqlite3
+*.parquet
+
+# ─── 日志 ────────────────────────────────────────────────────────────────
+*.log
+logs/

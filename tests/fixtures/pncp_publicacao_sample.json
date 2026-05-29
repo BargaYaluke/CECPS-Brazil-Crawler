@@ -1,0 +1,100 @@
+{
+  "data": [
+    {
+      "numeroControlePNCP": "00394460000141-1-000001/2026",
+      "anoCompra": 2026,
+      "sequencialCompra": 1,
+      "modalidadeId": 6,
+      "modalidadeNome": "Pregão - Eletrônico",
+      "modoDisputaId": 1,
+      "modoDisputaNome": "Aberto",
+      "situacaoCompraId": 1,
+      "situacaoCompraNome": "Divulgada no PNCP",
+      "tipoInstrumentoConvocatorioCodigo": 1,
+      "tipoInstrumentoConvocatorioNome": "Edital",
+      "amparoLegal": {
+        "codigo": 1,
+        "nome": "Lei 14.133/2021, Art. 28, I",
+        "descricao": "Pregão"
+      },
+      "objetoCompra": "Aquisição de equipamentos de informática para o Hospital Regional",
+      "informacaoComplementar": null,
+      "srp": false,
+      "dataPublicacaoPncp": "2026-05-26T11:00:00",
+      "dataAberturaProposta": "2026-06-05T09:00:00",
+      "dataEncerramentoProposta": "2026-06-12T18:00:00",
+      "dataInclusao": "2026-05-26T10:00:00",
+      "dataAtualizacao": "2026-05-26T11:00:00",
+      "valorTotalEstimado": 1500000.00,
+      "valorTotalHomologado": null,
+      "orgaoEntidade": {
+        "cnpj": "00394460000141",
+        "razaoSocial": "Ministério da Saúde",
+        "poderId": "E",
+        "esferaId": "F"
+      },
+      "unidadeOrgao": {
+        "codigoUnidade": "250010",
+        "nomeUnidade": "Hospital Regional Norte",
+        "ufNome": "Distrito Federal",
+        "ufSigla": "DF",
+        "municipioNome": "Brasília",
+        "codigoIbge": "5300108"
+      },
+      "linkSistemaOrigem": "https://example.gov.br/edital/1",
+      "linkProcessoEletronico": "https://example.gov.br/processo/1",
+      "usuarioNome": "Maria Silva",
+      "cancelado": false
+    },
+    {
+      "numeroControlePNCP": "12345678000199-1-000042/2026",
+      "anoCompra": 2026,
+      "sequencialCompra": 42,
+      "modalidadeId": 6,
+      "modalidadeNome": "Pregão - Eletrônico",
+      "modoDisputaId": 1,
+      "modoDisputaNome": "Aberto",
+      "situacaoCompraId": 1,
+      "situacaoCompraNome": "Divulgada no PNCP",
+      "tipoInstrumentoConvocatorioCodigo": 1,
+      "tipoInstrumentoConvocatorioNome": "Edital",
+      "amparoLegal": {
+        "codigo": 1,
+        "nome": "Lei 14.133/2021, Art. 28, I",
+        "descricao": "Pregão"
+      },
+      "objetoCompra": "Contratação de serviço de manutenção de software ERP",
+      "srp": false,
+      "dataPublicacaoPncp": "2026-05-26T14:30:00",
+      "dataAberturaProposta": "2026-06-10T10:00:00",
+      "dataEncerramentoProposta": "2026-06-20T17:00:00",
+      "dataInclusao": "2026-05-26T13:00:00",
+      "dataAtualizacao": "2026-05-26T14:30:00",
+      "valorTotalEstimado": 480000.00,
+      "valorTotalHomologado": null,
+      "orgaoEntidade": {
+        "cnpj": "12345678000199",
+        "razaoSocial": "Prefeitura Municipal de São Paulo",
+        "poderId": "E",
+        "esferaId": "M"
+      },
+      "unidadeOrgao": {
+        "codigoUnidade": "350010",
+        "nomeUnidade": "Secretaria Municipal de Inovação e Tecnologia",
+        "ufNome": "São Paulo",
+        "ufSigla": "SP",
+        "municipioNome": "São Paulo",
+        "codigoIbge": "3550308"
+      },
+      "linkSistemaOrigem": "https://example.gov.br/edital/42",
+      "linkProcessoEletronico": null,
+      "usuarioNome": "João Santos",
+      "cancelado": false
+    }
+  ],
+  "totalRegistros": 2,
+  "totalPaginas": 1,
+  "numeroPagina": 1,
+  "paginasRestantes": 0,
+  "empty": false
+}
