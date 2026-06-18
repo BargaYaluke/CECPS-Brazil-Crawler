@@ -24,7 +24,7 @@
 python analysis/equipment_bids/find_bids.py        # active:仅未过期(默认)
 python analysis/equipment_bids/find_bids.py all    # all:不限时效(含已过期)
 ```
-- 复用 `analysis/matching/pipeline/match_lib.py` 的 DeepSeek 客户端+磁盘缓存(改提示词→缓存失效会重算)。
+- 用本目录自包含的 `deepseek_client.py`(DeepSeek 客户端+磁盘缓存,缓存落 `cache/`;改提示词→缓存失效会重算)。
 - 分类结果落 `classifications.json`(可回溯)。
 
 ## 类别分布(产品标 69 / 合计 4478 万CNY)

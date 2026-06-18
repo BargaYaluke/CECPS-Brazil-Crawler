@@ -1,17 +1,16 @@
 """富化层(enrichers)。
 
-通过外部数据源 / 离线配置 / 本地维表给已入库记录补字段。已实现:
+通过外部数据源 / 离线配置给已入库 contratacoes 补字段。已实现:
 
     region.py     UF → macro region + GDP 分层(离线查 regions.yaml,无需 API)
-    fx.py         BRL → CNY 汇率(AwesomeAPI;BCB PTAX 实测不含 CNY)
-    cnpj.py       BrasilAPI CNPJ 机构/供应商画像(razão social/CNAE/porte/…)
-    catalogo.py   itens 裸编码 → catalogo_compras 标准品类树的可读类目名
+    fx.py         BRL → CNY 汇率(AwesomeAPI;填 valor_cny_estimado)
+    deadline.py   截止日 → 剩余天数 + 时效状态(离线)
+    translate.py  葡→中标的梗概(DeepSeek + 离线词典,填 translation_cache)
 
 规则:enricher 只读不写主表的业务字段,输出补全值;真正的
-DB 遍历 / 落库在 :mod:`src.pipeline.orchestrator`(``run_enrichment``)。
+DB 遍历 / 落库在 :mod:`src.pipeline.orchestrator`(``run_enrichment`` / ``run_translate``)。
 """
-from .catalogo import derive_categoria
-from .cnpj import fetch_cnpj_profile, normalize_cnpj
+from .deadline import classify_deadline, status_zh
 from .fx import fetch_brl_to_cny_rate, to_cny
 from .region import lookup_region
 
@@ -19,7 +18,6 @@ __all__ = [
     "lookup_region",
     "fetch_brl_to_cny_rate",
     "to_cny",
-    "fetch_cnpj_profile",
-    "normalize_cnpj",
-    "derive_categoria",
+    "classify_deadline",
+    "status_zh",
 ]

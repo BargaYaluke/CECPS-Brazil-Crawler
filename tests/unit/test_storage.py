@@ -52,18 +52,14 @@ def memory_engine():
 
 
 def test_models_create_all_tables(memory_engine) -> None:
-    """create_all 后能看到 7 张表(招标主表 + 明细 + 机构 + 游标 + 合同 + PCA + 目录维表)。"""
+    """create_all 后能看到 lite 版 4 张表(招标主表 + 明细 + 翻译缓存 + 游标)。"""
     insp = inspect(memory_engine)
     tables = set(insp.get_table_names())
     assert tables == {
         "contratacoes",
         "itens",
-        "orgaos",
-        "sync_cursor",
-        "contratos",
-        "pca_itens",
-        "catalogo_compras",
         "translation_cache",
+        "sync_cursor",
     }
 
 

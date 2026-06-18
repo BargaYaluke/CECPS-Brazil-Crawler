@@ -23,8 +23,8 @@ from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
 ROOT = Path(r"C:\巴西爬虫")
-sys.path.insert(0, str(ROOT / "analysis" / "matching" / "pipeline"))
-import match_lib as ml  # 复用 DeepSeek 客户端 + 磁盘缓存
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import deepseek_client as ml  # 自包含 DeepSeek 客户端 + 磁盘缓存(本目录)
 
 # 模式:默认 active(仅未过期);传 all → 不限时效(含已过期)
 MODE = "all" if len(sys.argv) > 1 and sys.argv[1].lower() in ("all", "全部", "不限") else "active"

@@ -1,14 +1,15 @@
-# 巴西政府采购爬虫与匹配
+# 巴西政府采购爬虫(lite)
 
-每天从巴西政府采购平台 **PNCP**(`pncp.gov.br`)抓取全国招标 / 合同 / 年度采购计划,
-清洗掉对中企无价值的标,补全背景(金额折算、地区、机构、品类),按六大行业分类,
-导出中文 Excel;并在此之上做「中葡企业 ↔ 巴西竞标」匹配。
-
-服务方向:数字经济 / 医疗医药 / 高端制造 / 大宗商贸 / 跨境电商 / 文化体育。
+从巴西政府采购平台 **PNCP**(`pncp.gov.br`)抓取全国招标(contratacoes)及其明细(itens),
+清洗掉对中企无价值的标,补全背景(金额 BRL→CNY 折算、地区、时效、葡→中翻译),
+导出中文 Excel 数据快照,并据此生成「设备/产品采购标」交付表。
 
 项目两部分:
-- **爬虫**(`src/`):PNCP → 本地库 `data/procurement.db` → 中文报表 `data/exports/report.xlsx`
-- **分析 / 匹配**(`analysis/`):企业↔竞标匹配 + 市场分析报告 —— 见 [analysis/README.md](analysis/README.md)
+- **爬虫**(`src/`):PNCP → 本地库 `data/procurement.db` → 中文数据快照 `data/exports/report.xlsx`
+- **分析**(`analysis/`):设备/产品采购标筛选 —— 见 [analysis/README.md](analysis/README.md)
+
+> **lite 重构(2026-06-18)**:已删合同/PCA/品类目录/机构画像/六维分类/PDF抽取等功能,
+> 及企业匹配/KA金主/市场报告三条分析线,只保留「爬招标 → 翻译 → 设备产品表」一条链。
 
 ## 环境
 
@@ -27,30 +28,27 @@ DeepSeek 翻译需在 `.env` 配 `DEEPSEEK_API_KEY`。
 
 ```powershell
 python -m src.cli fetch-and-store --start 2026-05-22 --end 2026-05-28   # 抓招标主表 + 明细
-python -m src.cli fetch-contratos --start 2026-05-22 --end 2026-05-28 --page-size 500   # 已签合同(竞品)
-python -m src.cli fetch-pca       --start 2026-05-22 --end 2026-05-28 --page-size 500 --limit 3000  # 年度采购计划
-python -m src.cli fetch-catalogo  --tipo both          # 品类目录(一次性参考数据)
-python -m src.cli enrich                               # 富化:金额折算 / 地区 / 机构画像 / 品类
-python -m src.cli translate                            # 葡→中翻译(DeepSeek,按原文缓存)
-python -m src.cli classify                             # 六大维度分类
-python -m src.cli export-excel --out data/exports/report.xlsx   # 导出报表
+python -m src.cli fetch-proposta                               # 还能投的快照(未过期)
+python -m src.cli enrich                                       # 富化:金额 BRL→CNY / 地区
+python -m src.cli translate                                    # 葡→中翻译(DeepSeek,按原文缓存)
+python -m src.cli export-excel --out data/exports/report.xlsx  # 导出数据快照
+python analysis/equipment_bids/find_bids.py                    # 生成「设备/产品采购标」
 ```
 
-一键报表流水线(自动跑上面合同→PCA→目录→富化→分类→导出):
+一键爬虫流水线(自动跑 抓取→富化→翻译→导出):
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\run_report.ps1
 ```
 
-竞标匹配与市场报告的用法见 [analysis/README.md](analysis/README.md)。
+设备/产品采购标的用法见 [analysis/README.md](analysis/README.md)。
 
 ## 数据
 
 ```
 data/
-├── raw/            原始抓取(留底)
-├── procurement.db  本地库(SQLite,所有结构化数据)
-├── inputs/         匹配用企业源表(输入)
-├── exports/        报表与匹配交付表(输出)
+├── procurement.db  本地库(SQLite,contratacoes / itens / translation_cache / sync_cursor)
+├── inputs/         人工维护的企业源表(保留,本线不用)
+├── exports/        数据快照 report.xlsx + 设备产品采购标(输出)
 └── filtered_log/   被过滤记录(审计,可追溯为何被丢)
 ```

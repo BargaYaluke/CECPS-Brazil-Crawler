@@ -21,14 +21,8 @@ from .core.logger import logger
 from .fetchers.pncp_publicacao import fetch_publicacao_all
 from .exporters.excel import export_to_excel
 from .pipeline.orchestrator import (
-    load_pca_from_cache,
     run_atualizacao_incremental,
-    run_catalogo,
-    run_classification,
-    run_contratos,
     run_enrichment,
-    run_pca,
-    run_pdf_enrichment,
     run_proposta_with_itens,
     run_publicacao_with_itens,
     run_translate,
@@ -875,378 +869,16 @@ def fetch_proposta_cmd(
 # ─── fetch-contratos(已签合同)────────────────────────────────────────
 
 
-@cli.command("fetch-contratos")
-@click.option("--start", "date_start", required=True, help="起始 dataPublicacaoPncp YYYY-MM-DD")
-@click.option("--end", "date_end", required=True, help="截止 dataPublicacaoPncp YYYY-MM-DD")
-@click.option(
-    "--page-size",
-    type=int,
-    default=None,
-    help="每页条数(默认 settings.pncp.page_size,API 强制 ≥10)",
-)
-@click.option(
-    "--cache-dir",
-    type=click.Path(),
-    default="./data/raw",
-    show_default=True,
-    help="原始 JSON 缓存根目录",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="最多入库多少条合同(调试用)",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="实时进度行打到 stderr",
-)
-def fetch_contratos_cmd(
-    date_start: str,
-    date_end: str,
-    page_size: int | None,
-    cache_dir: str,
-    limit: int | None,
-    progress: bool,
-) -> None:
-    """抓取已签合同(Contrato),入 contratos 表。
-
-    \b
-    跟招标 fetcher 完全独立:
-    * 合同没有 modalidade 概念 — 不传 --modalidade
-    * 不做 filter(filter 是为招标设计的)
-    * 不拉明细
-    * 入独立 contratos 表,不污染 contratacoes
-    * UPSERT 幂等,可重跑
-
-    \b
-    示例:
-        python -m src.cli fetch-contratos --start 2026-05-20 --end 2026-05-27 --limit 100
-    """
-    try:
-        ds = date.fromisoformat(date_start)
-        de = date.fromisoformat(date_end)
-    except ValueError as exc:
-        raise click.BadParameter(f"日期格式必须是 YYYY-MM-DD: {exc}") from exc
-
-    cache_root = Path(cache_dir).resolve()
-
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    try:
-        counters = asyncio.run(
-            run_contratos(
-                ds,
-                de,
-                page_size=page_size,
-                cache_root=cache_root,
-                limit=limit,
-            )
-        )
-        click.echo(
-            f"\nDone: contratos={counters['contratos']}  "
-            f"date={counters['date_start']}..{counters['date_end']}",
-            err=True,
-        )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
-
-
 # ─── fetch-pca(年度采购计划)──────────────────────────────────────────
-
-
-@cli.command("fetch-pca")
-@click.option("--start", "date_start", required=True, help="起始 dataAtualizacaoGlobalPCA YYYY-MM-DD")
-@click.option("--end", "date_end", required=True, help="截止 dataAtualizacaoGlobalPCA YYYY-MM-DD")
-@click.option(
-    "--page-size",
-    type=int,
-    default=None,
-    help="每页 PCA 头数(默认 settings.pncp.page_size,API 强制 ≥10)",
-)
-@click.option(
-    "--cache-dir",
-    type=click.Path(),
-    default="./data/raw",
-    show_default=True,
-    help="原始 JSON 缓存根目录",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="最多处理多少条 PCA 头部(注意:每条 PCA 内含多个 items,入库总数会更多)",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="实时进度行打到 stderr",
-)
-def fetch_pca_cmd(
-    date_start: str,
-    date_end: str,
-    page_size: int | None,
-    cache_dir: str,
-    limit: int | None,
-    progress: bool,
-) -> None:
-    """抓取 PCA(年度采购计划)→ 拍扁嵌套 items → 入 pca_itens 表。
-
-    \b
-    业务价值:提前 6-12 个月预知商机(销售管线前置)。
-    数据规模警告:7 天范围 PCA 头部约 100 万条,**强烈建议用 --limit**。
-
-    \b
-    示例:
-        python -m src.cli fetch-pca --start 2026-05-20 --end 2026-05-27 --limit 30
-        python -m src.cli fetch-pca --start 2026-05-27 --end 2026-05-27 --limit 100
-    """
-    try:
-        ds = date.fromisoformat(date_start)
-        de = date.fromisoformat(date_end)
-    except ValueError as exc:
-        raise click.BadParameter(f"日期格式必须是 YYYY-MM-DD: {exc}") from exc
-
-    cache_root = Path(cache_dir).resolve()
-
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    try:
-        counters = asyncio.run(
-            run_pca(
-                ds,
-                de,
-                page_size=page_size,
-                cache_root=cache_root,
-                limit=limit,
-            )
-        )
-        click.echo(
-            f"\nDone: pcas={counters['pcas']}  items={counters['items']}  "
-            f"failed={counters['pcas_failed']}  "
-            f"date={counters['date_start']}..{counters['date_end']}",
-            err=True,
-        )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
 
 
 # ─── load-pca-cache(从已落盘的 raw 救回 PCA 入库)────────────────────────
 
 
-@cli.command("load-pca-cache")
-@click.option(
-    "--cache-dir",
-    type=click.Path(),
-    default="./data/raw",
-    show_default=True,
-    help="原始 JSON 缓存根目录(会读其下 pca/**/page_*.json)",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="最多处理多少个 PCA 头(不传则全部)",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="实时进度行打到 stderr",
-)
-def load_pca_cache_cmd(cache_dir: str, limit: int | None, progress: bool) -> None:
-    """从已落盘的 raw 缓存(data/raw/pca/)把 PCA 救回入库,**不重抓网络**。
-
-    \b
-    用途:fetch-pca 旧版"全抓完才提交",中断会回滚全部 → 库空但 raw 文件还在。
-    本命令读那些 page_*.json 直接入库(UPSERT 幂等,可重跑)。
-
-    \b
-    示例:
-        python -m src.cli load-pca-cache
-        python -m src.cli load-pca-cache --limit 50000
-    """
-    cache_root = Path(cache_dir).resolve()
-
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    try:
-        counters = load_pca_from_cache(cache_root=cache_root, limit=limit)
-        click.echo(
-            f"\nDone: files={counters['files']}  pcas={counters['pcas']}  "
-            f"items={counters['items']}  failed={counters['pcas_failed']}",
-            err=True,
-        )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
-
-
 # ─── fetch-catalogo(Compras.gov.br CATMAT/CATSER 目录)──────────────────
 
 
-@cli.command("fetch-catalogo")
-@click.option(
-    "--tipo",
-    type=click.Choice(["material", "servico", "both"], case_sensitive=False),
-    default="both",
-    show_default=True,
-    help="拉哪类目录:material(CATMAT)/ servico(CATSER)/ both",
-)
-@click.option(
-    "--page-size",
-    type=int,
-    default=None,
-    help="每页条数(默认 settings.compras_gov.page_size=500,API 强制 10~500)",
-)
-@click.option(
-    "--cache-dir",
-    type=click.Path(),
-    default="./data/raw",
-    show_default=True,
-    help="原始 JSON 缓存根目录",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="每个 tipo 最多入库多少条(调试用;全量不传)。注意 material 全量约 34 万条",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="实时进度行打到 stderr",
-)
-def fetch_catalogo_cmd(
-    tipo: str,
-    page_size: int | None,
-    cache_dir: str,
-    limit: int | None,
-    progress: bool,
-) -> None:
-    """抓 Compras.gov.br 标准品类目录(CATMAT/CATSER)→ 入 catalogo_compras 维表。
-
-    \b
-    富化层参考数据:把裸编码映射成可读「大类/类/PDM + 描述」,供富化 itens 品类
-    与维度分类用。UPSERT 幂等,可断点重跑。
-
-    \b
-    ⚠️ material(CATMAT)全量约 34 万条(~700 页),首次全量拉几分钟。
-    servico(CATSER)约 3 千条,很快。
-
-    \b
-    示例:
-        python -m src.cli fetch-catalogo --tipo servico            # 服务目录(小,先试)
-        python -m src.cli fetch-catalogo --tipo material --limit 500
-        python -m src.cli fetch-catalogo                           # both,全量
-    """
-    cache_root = Path(cache_dir).resolve()
-
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    try:
-        counters = asyncio.run(
-            run_catalogo(
-                tipo=tipo.lower(),
-                page_size=page_size,
-                cache_root=cache_root,
-                limit=limit,
-            )
-        )
-        click.echo(
-            f"\nDone: material={counters['material']}  servico={counters['servico']}  "
-            f"total={counters['total']}",
-            err=True,
-        )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
-
-
 # ─── fetch-editais(Edital PDF 全文 + 二次过滤)──────────────────────
-
-
-@cli.command("fetch-editais")
-@click.option(
-    "--limit",
-    type=int,
-    default=20,
-    show_default=True,
-    help="最多处理多少条招标(PDF 慢,默认 20;一条约 30 秒)",
-)
-@click.option(
-    "--concurrency",
-    type=int,
-    default=3,
-    show_default=True,
-    help="并发下载数(PDF 服务器慢,别太高)",
-)
-@click.option(
-    "--redo",
-    is_flag=True,
-    default=False,
-    help="连已解析过的也重做(规则/PDF 更新后回灌)",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="实时进度行打到 stderr",
-)
-def fetch_editais_cmd(limit: int, concurrency: int, redo: bool, progress: bool) -> None:
-    """对主表里未解析的招标,下载主 Edital PDF → 提取全文 → 跑 F004-F006 二次过滤。
-
-    \b
-    流程:arquivos 元数据 → 挑主 Edital → 流式下载到内存 → pdfplumber 提取
-    → 写 edital_text → re_evaluate(F004/F005/F006)→ 命中则移到 filtered_log。
-    PDF 不落盘(方案 C)。
-
-    \b
-    ⚠️ 慢操作:一条招标约 30 秒(下载 + 解析)。务必用 --limit。
-
-    \b
-    示例:
-        python -m src.cli fetch-editais --limit 10
-        python -m src.cli fetch-editais --limit 50 --concurrency 5
-    """
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    try:
-        counters = asyncio.run(
-            run_pdf_enrichment(limit=limit, concurrency=concurrency, redo=redo)
-        )
-        click.echo(
-            f"\nDone: processed={counters['processed']}  "
-            f"with_text={counters['with_text']}  "
-            f"empty_text={counters['empty_text']}  "
-            f"refiltered_out={counters['refiltered_out']}",
-            err=True,
-        )
-        rh = counters.get("rule_hits", {})
-        if rh:
-            click.echo(
-                "  二次硬过滤命中: " + ", ".join(f"{k}={v}" for k, v in sorted(rh.items())),
-                err=True,
-            )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
 
 
 # ─── translate(标的葡→中,DeepSeek)──────────────────────────────────
@@ -1299,77 +931,13 @@ def translate_cmd(limit: int | None, batch_size: int | None, progress: bool) -> 
 # ─── classify(六大维度分类)──────────────────────────────────────────
 
 
-@cli.command("classify")
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="最多分类多少条(不传则全部未分类的)",
-)
-@click.option(
-    "--redo",
-    is_flag=True,
-    default=False,
-    help="连已分类的也重做(dimension_keywords.yaml 更新后回灌)",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="进度行打到 stderr",
-)
-def classify_cmd(limit: int | None, redo: bool, progress: bool) -> None:
-    """对已入库的招标跑六大维度分类(数字经济/医疗医药/高端制造/大宗商贸/跨境电商/文化体育)。
-
-    \b
-    文本源:objeto_compra + informacao_complementar + edital_text(若 PDF 已解析)。
-    更新 dimension_primary / secondary / confidence / match_reason 四个字段。
-
-    \b
-    示例:
-        python -m src.cli classify              # 分类所有还没分类的
-        python -m src.cli classify --redo       # 词典更新后全部重分
-    """
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    try:
-        counters = asyncio.run(run_classification(limit=limit, redo=redo))
-        click.echo(
-            f"\nDone: processed={counters['processed']}  "
-            f"classified={counters['classified']}  "
-            f"uncategorized={counters['uncategorized']}  "
-            f"low_confidence={counters['low_confidence']}",
-            err=True,
-        )
-        bd = counters.get("by_dimension", {})
-        if bd:
-            click.echo(
-                "  维度分布: "
-                + ", ".join(f"{k}={v}" for k, v in sorted(bd.items(), key=lambda kv: -kv[1])),
-                err=True,
-            )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
-
-
-# ─── enrich(富化:区域 / 汇率 / 机构画像 / itens 目录)──────────────────
+# ─── enrich(富化:区域 / 汇率)──────────────────────────────────────────
 
 
 @cli.command("enrich")
 @click.option("--region", is_flag=True, default=False, help="只跑区域富化(UF→大区/GDP 分层)")
 @click.option("--fx", is_flag=True, default=False, help="只跑汇率富化(BRL→CNY)")
-@click.option("--orgao", is_flag=True, default=False, help="只跑机构画像(聚合 contratacoes→orgaos)")
-@click.option("--catalogo", is_flag=True, default=False, help="只跑 itens 目录富化(裸编码→可读类目)")
-@click.option(
-    "--with-brasilapi",
-    is_flag=True,
-    default=False,
-    help="机构画像额外调 BrasilAPI 补权威名称/所在地(每个 CNPJ 一次,慢)",
-)
-@click.option("--limit", type=int, default=None, help="region/fx/catalogo 各自最多处理多少行")
+@click.option("--limit", type=int, default=None, help="region/fx 各自最多处理多少行")
 @click.option("--redo", is_flag=True, default=False, help="连已富化过的(对应列非空)也重做")
 @click.option(
     "--progress/--no-progress",
@@ -1380,31 +948,24 @@ def classify_cmd(limit: int | None, redo: bool, progress: bool) -> None:
 def enrich_cmd(
     region: bool,
     fx: bool,
-    orgao: bool,
-    catalogo: bool,
-    with_brasilapi: bool,
     limit: int | None,
     redo: bool,
     progress: bool,
 ) -> None:
-    """富化已入库数据:区域 / 汇率(BRL→CNY)/ 机构画像 / itens 目录类目。
+    """富化已入库 contratacoes:区域 / 汇率(BRL→CNY,设备产品表金额区间必需)。
 
     \b
-    不传任何 --region/--fx/--orgao/--catalogo 开关 → 四块全跑。
-    传了任意一个 → 只跑被指定的那些。
+    不传任何 --region/--fx 开关 → 两块全跑;传了任意一个 → 只跑被指定的那些。
 
     \b
     示例:
-        python -m src.cli enrich                       # 四块全跑
-        python -m src.cli enrich --region --fx         # 只跑区域+汇率
-        python -m src.cli enrich --orgao --with-brasilapi
-        python -m src.cli enrich --redo                # 全部重做(汇率刷新后回灌)
+        python -m src.cli enrich                  # 区域 + 汇率全跑
+        python -m src.cli enrich --fx             # 只跑汇率
+        python -m src.cli enrich --redo           # 全部重做(汇率刷新后回灌)
     """
-    any_specified = region or fx or orgao or catalogo
+    any_specified = region or fx
     do_region = region if any_specified else True
     do_fx = fx if any_specified else True
-    do_orgao = orgao if any_specified else True
-    do_catalogo = catalogo if any_specified else True
 
     progress_sink_id: int | None = None
     if progress:
@@ -1415,9 +976,6 @@ def enrich_cmd(
             run_enrichment(
                 do_region=do_region,
                 do_fx=do_fx,
-                do_orgao=do_orgao,
-                do_catalogo_itens=do_catalogo,
-                with_brasilapi=with_brasilapi,
                 limit=limit,
                 redo=redo,
             )
@@ -1427,9 +985,7 @@ def enrich_cmd(
             "\nDone: "
             f"region={counters['region_filled']}  "
             f"fx={counters['fx_filled']}"
-            + (f" (1 BRL={rate} CNY)" if rate else "")
-            + f"  orgaos={counters['orgaos_upserted']}  "
-            f"itens_catalogo={counters['itens_catalogo_filled']}",
+            + (f" (1 BRL={rate} CNY)" if rate else ""),
             err=True,
         )
     finally:
