@@ -35,11 +35,19 @@ python -m src.cli export-excel --out data/exports/report.xlsx  # 导出数据快
 python analysis/equipment_bids/find_bids.py                    # 生成「设备/产品采购标」
 ```
 
-一键爬虫流水线(自动跑 抓取→富化→翻译→导出):
+**周更一键脚本**(自动跑 增量爬取→还能投快照→富化→翻译→导出 report.xlsx→生成设备产品表):
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\run_report.ps1
+powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1
+# 首跑/补全:回溯过去 N 天发布的标
+powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -BackfillDays 60
+# 额外出"全量含过期"表
+powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -AllMode
 ```
+
+- 常规周更走 `fetch-atualizacao` 增量(`sync_cursor` 记上次拉取位点,首跑兜底 today-7d)。
+- 计划任务示例(每周一 07:00)见 `scripts\run_weekly.ps1` 头部注释。
+- 任一步失败脚本返回非 0(便于计划任务标红)。
 
 设备/产品采购标的用法见 [analysis/README.md](analysis/README.md)。
 
