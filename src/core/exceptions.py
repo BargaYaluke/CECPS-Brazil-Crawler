@@ -1,6 +1,6 @@
 """项目自定义异常层级。
 
-根据 CLAUDE.md 第 6 节: 所有 except 必须捕获这里的类型,禁止裸 ``except:``。
+约定: 所有 except 必须捕获这里的类型,禁止裸 ``except:``。
 按层分类,便于上层做差异化处理(重试 / 跳过 / 报警)。
 """
 from __future__ import annotations

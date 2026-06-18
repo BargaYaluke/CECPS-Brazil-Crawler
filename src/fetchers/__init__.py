@@ -1,6 +1,6 @@
 """采集层(fetchers)。
 
-每个 fetcher 对应 CLAUDE.md 第 3 节中的一个 PNCP endpoint:
+每个 fetcher 对应一个 PNCP endpoint:
     pncp_publicacao.py     /api/consulta/v1/contratacoes/publicacao   ✅ P1
     pncp_atualizacao.py    /api/consulta/v1/contratacoes/atualizacao   ✅
     pncp_proposta.py       /api/consulta/v1/contratacoes/proposta     ✅

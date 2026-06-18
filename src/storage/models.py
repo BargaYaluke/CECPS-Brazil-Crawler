@@ -1,6 +1,6 @@
 """SQLAlchemy 2.0 ORM 模型。
 
-四张表(见 CLAUDE.md §4 与 docs/02_字段拓展设计.md §5):
+四张表:
 
 * :class:`Contratacao` — 招标主表(~50 列,字段基于 PNCP publicacao 实采)
 * :class:`Item` — 招标明细(P1 补完 ``pncp_itens`` fetcher 后填)
@@ -162,7 +162,7 @@ class Item(Base):
     数据来源:``/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{seq}/itens``,
     走 :mod:`src.fetchers.pncp_itens`(普通 HttpClient,不被 F5 WAF 拦)。
 
-    字段比 docs/02 §5 的 9 列扩展到 ~30 列 — 真实 API 返回了远多于设计文档的
+    字段比原设计的 9 列扩展到 ~30 列 — 真实 API 返回了远多于设计文档的
     boolean 信号(``incentivo_produtivo_basico`` / ``tipo_beneficio`` /
     ``exigencia_conteudo_nacional``),P3 过滤层可以直接查这些字段,
     比解析 PDF 简单。
@@ -369,7 +369,7 @@ class PcaItem(Base):
 
     数据源:``/api/consulta/v1/pca/atualizacao``(或 ``/v1/pca/``)。
 
-    业务价值(docs/01):**提前 6-12 个月预知商机** — 每个机构每年初发布次年
+    业务价值:**提前 6-12 个月预知商机** — 每个机构每年初发布次年
     采购计划,业务方可以做销售管线前置。
 
     数据结构跟招标完全不同:API 返回的每条 record 是一个 "PCA 头 + N 个 itens"
@@ -518,6 +518,31 @@ class CatalogoCompra(Base):
         return f"<CatalogoCompra {self.tipo}:{self.codigo} {self.nome_classe}>"
 
 
+# ─── 翻译缓存(葡→中标的梗概)───────────────────────────────────────────
+
+
+class TranslationCache(Base):
+    """葡语标的 → 中文译文 缓存(避免重复调翻译 API)。
+
+    采购标的高度重复,按**原文 hash** 去重:同一段葡语只翻一次、永久复用。
+    ``translate`` 命令填充本表(调 DeepSeek);导出时按 hash 查,命中直接用、
+    未命中回退离线词典。UPSERT 幂等(主键 ``text_hash``)。
+    """
+
+    __tablename__ = "translation_cache"
+
+    text_hash: Mapped[str] = mapped_column(String(40), primary_key=True)  # sha1(原文)
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    translated: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(48), nullable=True)  # 译文来源:deepseek-v4-flash / offline
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
+
+    def __repr__(self) -> str:
+        return f"<TranslationCache {self.text_hash[:8]} {self.model}>"
+
+
 # ─── 增量游标 ──────────────────────────────────────────────────────────
 
 
@@ -525,7 +550,7 @@ class SyncCursor(Base):
     """增量同步游标。
 
     每个 fetcher 在表里保留一条记录,记录"上次拉到的最末日期"。
-    fetcher 启动时读它确定 dataInicial(CLAUDE.md §1 第 4 条:增量优先)。
+    fetcher 启动时读它确定 dataInicial(增量优先)。
     """
 
     __tablename__ = "sync_cursor"
@@ -549,5 +574,6 @@ __all__ = [
     "PcaItem",
     "Orgao",
     "CatalogoCompra",
+    "TranslationCache",
     "SyncCursor",
 ]

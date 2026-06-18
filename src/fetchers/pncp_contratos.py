@@ -3,7 +3,7 @@
 跟招标(``contratacoes/*``)系列不同 — 这个接口返回**已签合同**(Contrato),
 schema 完全不一样(供应商 / 合同金额 / 生效期等)。
 
-**实测发现**(跟 CLAUDE.md / docs/01 描述有出入):
+**实测发现**(跟原设计描述有出入):
 
 * 路径就是 ``/contratos``,**没有** ``/publicacao`` 后缀
 * ``codigoModalidadeContratacao`` **不必填**(合同没有 modalidade 概念)

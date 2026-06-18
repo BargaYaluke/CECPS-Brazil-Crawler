@@ -1,0 +1,214 @@
+# translation_pt_zh.yaml — 葡萄牙语采购术语 → 中文(离线翻译词典)
+# 用途: src/enrichers/translate.py 把 objeto_compra(葡语标的)翻成中文梗概
+# 由 Claude 基于真实语料(8357 条标的的高频短语/术语)人工编写,不接外部 API。
+#
+# 匹配机制(见 translate.py):
+#   1. 文本先 normalize(转小写 + 去重音符)
+#   2. phrases 按顺序逐条整体替换(放最前的最先匹配 → 把长模板句先吃掉)
+#   3. terms 按词长降序做整词替换(长词优先,避免被短词截断)
+# 这里 key 写自然葡语(可读),加载时自动 normalize。
+
+# ─── 模板短语(顺序敏感:最具体/最长的放前面)──────────────────────────
+phrases:
+  # —— 门户噪声清理 ——
+  - ["[portal de compras públicas] -", ""]
+  - ["[portal de compras públicas]", ""]
+  # —— 供应/执行 连接 ——
+  - ["execução de obras de", "施工 工程 "]
+  - ["fornecimento parcelado de", "分批供应 "]
+  - ["fornecimento de", "供应 "]
+  - ["pessoa jurídica", "法人企业"]
+  # —— 拍卖/资产处置 系列(modalidade Leilão;多为政府变卖资产,对中企多无价值)——
+  - ["alienação de bens móveis inservíveis", "处置报废动产"]
+  - ["alienação de bens móveis", "处置动产"]
+  - ["alienação de bens imóveis", "处置不动产"]
+  - ["alienação de imóveis", "处置不动产"]
+  - ["alienação de imóvel", "处置不动产"]
+  - ["alienação de mercadorias apreendidas", "变卖查扣货物"]
+  - ["alienação de bens", "资产处置"]
+  - ["alienação, mediante venda, de", "变卖处置 "]
+  - ["alienação de", "处置 "]
+  - ["alienação", "资产处置/变卖"]
+  - ["leilão para alienação de", "拍卖处置 "]
+  - ["leilão", "拍卖"]
+  - ["concessão de uso", "使用权特许"]
+  - ["concessão de", "特许 "]
+  # —— 认证入库 / 公开征集 ——
+  - ["chamamento público para credenciamento de", "公开征集·认证入库 "]
+  - ["chamamento público", "公开征集"]
+  - ["credenciamento de", "认证入库 "]
+  - ["credenciamento", "认证入库"]
+  # —— "价格登记(框架协议)" 系列 ——
+  - ["registro de preços para futura e eventual aquisição de", "【框架·价格登记】未来按需采购 "]
+  - ["registro de preços para futura e eventual contratação de", "【框架·价格登记】未来按需招标 "]
+  - ["registro de preços para eventual aquisição de", "【价格登记】按需采购 "]
+  - ["registro de preços para aquisição de", "【价格登记】采购 "]
+  - ["registro de preços para contratação de", "【价格登记】招标 "]
+  - ["registro de preços para a contratação de", "【价格登记】招标 "]
+  - ["registro de preços", "价格登记"]
+  # —— "招专业公司" 系列 ——
+  - ["contratação de empresa especializada para a prestação de serviços de", "招专业公司提供服务 "]
+  - ["contratação de empresa especializada para prestação de serviços de", "招专业公司提供服务 "]
+  - ["contratação de empresa especializada na prestação de serviços de", "招专业公司提供服务 "]
+  - ["contratação de empresa especializada em", "招专业公司 "]
+  - ["contratação de empresa especializada para a execução de", "招专业公司施工 "]
+  - ["contratação de empresa especializada para execução de", "招专业公司施工 "]
+  - ["contratação de empresa especializada para", "招专业公司 "]
+  - ["contratação de empresa de engenharia para", "招工程公司 "]
+  - ["contratação de empresa para prestação de serviços de", "招公司提供服务 "]
+  - ["contratação de empresa para execução de", "招公司施工 "]
+  - ["contratação de empresa para", "招公司 "]
+  - ["contratação de serviços de", "采购服务 "]
+  - ["prestação de serviços de", "提供服务 "]
+  - ["o objeto da presente licitação é a", "本次招标标的："]
+  - ["o objeto da presente licitação é", "本次招标标的："]
+  - ["portal de compras públicas", " "]
+  - ["aquisição de", "采购 "]
+  - ["contratação de", "招标采购 "]
+  - ["contratação", "招标采购"]
+  - ["aquisição", "采购"]
+  # —— 用途 / 连接 ——
+  - ["para atender as necessidades da", "用于满足"]
+  - ["para atender as necessidades do", "用于满足"]
+  - ["para atender as demandas da", "用于满足"]
+  - ["para atender o", "用于"]
+  - ["para atender a", "用于"]
+  - ["destinados a", "用于"]
+  - ["destinado a", "用于"]
+  - ["conforme termo de referência", "(详见参考条款)"]
+  - ["conforme especificações", "(详见规格)"]
+  - ["conforme edital", "(详见招标书)"]
+  - ["futura e eventual", "未来按需"]
+
+# ─── 术语词典(整词替换,长词优先)────────────────────────────────────
+terms:
+  # 标的类型
+  materiais: 材料
+  material: 材料
+  equipamentos: 设备
+  equipamento: 设备
+  serviços: 服务
+  serviço: 服务
+  medicamentos: 药品
+  medicamento: 药品
+  veículos: 车辆
+  veículo: 车辆
+  obras: 工程
+  obra: 工程
+  construção: 建筑
+  reforma: 翻修
+  ampliação: 扩建
+  manutenção: 维护
+  pavimentação: 道路铺设
+  peças: 配件
+  peça: 配件
+  ferramentas: 工具
+  pneus: 轮胎
+  uniformes: 制服
+  mobiliário: 家具
+  alimentos: 食品
+  gêneros: 品类
+  merenda: 营养餐
+  combustíveis: 燃油
+  combustível: 燃油
+  reagentes: 试剂
+  oxigênio: 氧气
+  ambulância: 救护车
+  impressos: 印刷品
+  # 领域
+  saúde: 医疗卫生
+  hospitalar: 医院
+  hospitalares: 医院
+  odontológico: 牙科
+  laboratório: 实验室
+  educação: 教育
+  escolar: 学校
+  esportivo: 体育
+  esportiva: 体育
+  cultural: 文化
+  evento: 活动
+  eventos: 活动
+  informática: 信息技术
+  software: 软件
+  transporte: 运输
+  locação: 租赁
+  seguro: 保险
+  vigilância: 安保
+  consultoria: 咨询
+  engenharia: 工程
+  elétrico: 电气
+  elétrica: 电气
+  eletrônico: 电子
+  hidráulico: 给排水
+  iluminação: 照明
+  energia: 能源
+  saneamento: 环卫
+  resíduos: 废弃物
+  coleta: 收运
+  limpeza: 清洁
+  higiene: 卫生
+  capacitação: 培训
+  treinamento: 培训
+  gráfica: 印刷
+  agrícola: 农业
+  predial: 楼宇
+  asfáltico: 沥青
+  sinalização: 标志标线
+  # 机构 / 行政
+  município: 市
+  municipal: 市级
+  prefeitura: 市政府
+  secretaria: 局
+  fundo: 基金
+  fundação: 基金会
+  universidade: 大学
+  públicas: 公共
+  pública: 公共
+  público: 公共
+  # 修饰
+  diversos: 多种
+  diversas: 多项
+  eventual: 按需
+  futura: 未来
+  especializada: 专业
+  visando: 旨在
+  necessidades: 需求
+  # 拍卖/资产处置类残留术语
+  imóveis: 不动产
+  imóvel: 不动产
+  inservíveis: 报废
+  inservível: 报废
+  mercadorias: 货物
+  apreendidas: 查扣
+  bens: 资产
+  móveis: 动产
+  oficiais: 公务
+  caminhões: 卡车
+  máquinas: 机械
+  incentivo: 激励
+  industrial: 工业
+  doação: 划拨
+  receita federal: 联邦税务局
+  lotes: 批次
+  lote: 批次
+  # 高频残留补充
+  empresas: 公司
+  empresa: 公司
+  especializadas: 专业
+  especializado: 专业
+  execução: 执行
+  refeição: 餐食
+  refeições: 餐食
+  alimentícios: 食品
+  alimentício: 食品
+  passagens: 机票
+  aéreas: 航空
+  gestão: 管理
+  água: 供水
+  esgoto: 污水
+  divulgação: 宣传
+  combustão: 燃烧
+  gases: 气体
+  medicinais: 医用
+  cestas: 食品篮
+  básicas: 基础

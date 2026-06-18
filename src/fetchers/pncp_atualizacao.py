@@ -154,8 +154,7 @@ async def fetch_atualizacao_all(
         原始 record dict。
 
     Notes:
-        404 / 空响应只记 warning,跳过当前 modalidade 继续下一个
-        (CLAUDE.md §7)。
+        404 / 空响应只记 warning,跳过当前 modalidade 继续下一个。
     """
     pncp_cfg = get_pncp_settings()
     codes = list(modalidade_codes) if modalidade_codes else get_default_modalidade_iter()

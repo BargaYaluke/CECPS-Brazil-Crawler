@@ -8,8 +8,6 @@
     schemas.py      PublicacaoRaw(镜像 API) + ContratacaoIn(扁平入库)
     repositories.py ContratacaoRepository(UPSERT 幂等)
     cursor.py       CursorRepository(增量游标)
-
-字段定义见 docs/02_字段拓展设计.md §5。
 """
 from .cursor import CursorRepository
 from .database import get_engine, get_session_factory, init_db, session_scope
@@ -22,6 +20,7 @@ from .models import (
     Orgao,
     PcaItem,
     SyncCursor,
+    TranslationCache,
 )
 from .repositories import (
     CatalogoRepository,
@@ -29,6 +28,7 @@ from .repositories import (
     ContratoRepository,
     ItemRepository,
     PcaRepository,
+    TranslationRepository,
 )
 from .schemas import (
     AmparoLegal,
@@ -58,6 +58,7 @@ __all__ = [
     "Orgao",
     "PcaItem",
     "CatalogoCompra",
+    "TranslationCache",
     "SyncCursor",
     "AmparoLegal",
     "OrgaoEntidade",
@@ -81,6 +82,7 @@ __all__ = [
     "ContratoRepository",
     "PcaRepository",
     "CatalogoRepository",
+    "TranslationRepository",
     "CursorRepository",
     "get_engine",
     "get_session_factory",

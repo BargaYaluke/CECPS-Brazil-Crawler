@@ -1,7 +1,7 @@
 """PNCP ``/api/consulta/v1/pca/atualizacao`` fetcher。
 
 PCA = Plano de Contratações Anual = 年度采购计划。
-业务价值(docs/01 §1.3):**提前 6-12 个月预知商机** — 每个机构每年初发布
+业务价值:**提前 6-12 个月预知商机** — 每个机构每年初发布
 次年的采购计划。
 
 **实测路径**(2026-05-28 探测):

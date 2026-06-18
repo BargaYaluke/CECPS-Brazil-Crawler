@@ -2,7 +2,7 @@
 
 提供 ``Contratacao`` 表的 UPSERT 与查询。
 
-UPSERT 设计:以 ``pncp_id`` 为冲突键,**幂等可重入**(CLAUDE.md §1 第 3 条)
+UPSERT 设计:以 ``pncp_id`` 为冲突键,**幂等可重入**
 — 重复跑 fetcher,同一条 record 不会变成多行,而是字段被覆盖更新。
 
 实现走 SQLite 方言的 ``INSERT ... ON CONFLICT DO UPDATE``。生产换 Postgres 时
@@ -17,7 +17,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
 
 from ..core.logger import logger
-from .models import CatalogoCompra, Contratacao, Contrato, Item, PcaItem
+from .models import CatalogoCompra, Contratacao, Contrato, Item, PcaItem, TranslationCache
 from .schemas import CatalogoCompraIn, ContratacaoIn, ContratoIn, ItemIn, PcaItemIn
 
 
@@ -301,10 +301,58 @@ class CatalogoRepository:
         return self._session.scalars(stmt.limit(1)).first()
 
 
+class TranslationRepository:
+    """``translation_cache`` 表:葡→中译文按原文 hash 缓存。"""
+
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def upsert(self, text_hash: str, source_text: str, translated: str, model: str) -> None:
+        """UPSERT 单条译文(冲突键 ``text_hash``)。"""
+        values = {
+            "text_hash": text_hash,
+            "source_text": source_text,
+            "translated": translated,
+            "model": model,
+        }
+        stmt = sqlite_insert(TranslationCache).values(**values)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=["text_hash"],
+            set_={k: getattr(stmt.excluded, k) for k in values if k != "text_hash"},
+        )
+        self._session.execute(stmt)
+
+    def existing_hashes(self) -> set[str]:
+        """已缓存的 text_hash 集合(用于跳过已翻译的)。"""
+        return set(self._session.scalars(select(TranslationCache.text_hash)))
+
+    def api_hashes(self) -> set[str]:
+        """**API 成功翻译**(model != offline)的 text_hash 集合。
+
+        run_translate 用它做跳过集:API 译文跳过,但 offline 兜底的下次仍会重试升级。
+        """
+        return set(
+            self._session.scalars(
+                select(TranslationCache.text_hash).where(TranslationCache.model != "offline")
+            )
+        )
+
+    def load_map(self) -> dict[str, str]:
+        """返回 ``{text_hash: translated}`` 全量映射(导出时一次性载入查表)。"""
+        rows = self._session.execute(
+            select(TranslationCache.text_hash, TranslationCache.translated)
+        )
+        return {h: t for h, t in rows if t}
+
+    def count(self) -> int:
+        return int(self._session.scalar(select(func.count()).select_from(TranslationCache)) or 0)
+
+
 __all__ = [
     "ContratacaoRepository",
     "ItemRepository",
     "ContratoRepository",
     "PcaRepository",
     "CatalogoRepository",
+    "TranslationRepository",
 ]

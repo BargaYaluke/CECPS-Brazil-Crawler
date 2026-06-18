@@ -681,13 +681,18 @@ class PcaRaw(BaseModel):
         """把 PCA 头 + N 个 item **拍扁**成 N 个 ``PcaItemIn``,头信息冗余复制。
 
         Args:
-            raw_json: 整条 PCA 头部的原始 dict(同一条 PCA 的所有 item 共享同一份 raw_json)。
+            raw_json: 整条 PCA 头部的原始 dict(含 ``itens`` 数组)。每个 item 的
+                ``raw_json`` 只留底**它自己那条** item dict —— 绝不把整条 PCA
+                头+全部 itens 复制进每一行,否则 N item × 整份响应 = 平方级膨胀
+                (历史 bug:172K 行 ×436KB ≈ 48GB)。
 
         Returns:
             N 个 :class:`PcaItemIn`,准备 UPSERT。
         """
+        raw_items = (raw_json or {}).get("itens") or []
         results: list[PcaItemIn] = []
-        for item in self.itens:
+        for idx, item in enumerate(self.itens):
+            item_raw = raw_items[idx] if idx < len(raw_items) else None
             results.append(
                 PcaItemIn(
                     id_pca_pncp=self.idPcaPncp,
@@ -719,7 +724,7 @@ class PcaRaw(BaseModel):
                     unidade_requisitante=item.unidadeRequisitante,
                     data_inclusao=item.dataInclusao,
                     data_atualizacao=item.dataAtualizacao,
-                    raw_json=raw_json,
+                    raw_json=item_raw,
                 )
             )
         return results

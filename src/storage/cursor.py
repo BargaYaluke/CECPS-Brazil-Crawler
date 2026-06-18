@@ -3,7 +3,7 @@
 每个 fetcher 维护一条:启动时 ``get(fetcher_name)`` 拿到 ``last_data_final``,
 推断本轮的 ``dataInicial = last_data_final + 1``;成功跑完后 ``update``。
 
-CLAUDE.md §1 第 4 条:"增量优先,全量爬取必须显式 --full"。
+约定:增量优先,全量爬取必须显式 --full。
 """
 from __future__ import annotations
 

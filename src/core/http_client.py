@@ -9,8 +9,7 @@
 * **F5 BIG-IP ASM 挑战自动处理**:检测到 JS 挑战页时,触发 ``on_challenge``
   回调拿新 cookies 后重试一次(回调由调用方传入,核心层不强依赖 playwright)
 
-所有 fetcher 必须经此发请求,禁止直接使用 httpx / requests
-(见 CLAUDE.md 第 6 / 7 节)。
+所有 fetcher 必须经此发请求,禁止直接使用 httpx / requests。
 """
 from __future__ import annotations
 

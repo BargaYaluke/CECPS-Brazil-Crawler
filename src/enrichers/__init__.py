@@ -7,7 +7,7 @@
     cnpj.py       BrasilAPI CNPJ 机构/供应商画像(razão social/CNAE/porte/…)
     catalogo.py   itens 裸编码 → catalogo_compras 标准品类树的可读类目名
 
-规则(CLAUDE.md §1):enricher 只读不写主表的业务字段,输出补全值;真正的
+规则:enricher 只读不写主表的业务字段,输出补全值;真正的
 DB 遍历 / 落库在 :mod:`src.pipeline.orchestrator`(``run_enrichment``)。
 """
 from .catalogo import derive_categoria

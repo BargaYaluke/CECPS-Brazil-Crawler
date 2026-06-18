@@ -40,6 +40,17 @@ enrichment:
   brasilapi_base_url: "https://brasilapi.com.br/api"
   rate_limit_per_sec: 3                # BrasilAPI 有限流,温和点
 
+# ─── 翻译(标的葡→中;DeepSeek,OpenAI 兼容)─────────────────────────────
+# API key 放 .env 的 DEEPSEEK_API_KEY(不进代码/不提交)。无 key 时自动回退离线词典。
+translation:
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-v4-flash"           # 该账号可用:deepseek-v4-flash / deepseek-v4-pro
+  api_key_env: "DEEPSEEK_API_KEY"
+  batch_size: 20                       # 每次 API 调用翻多少条(整批 JSON 数组返回)
+  max_chars: 500                       # 单条标的截断长度(梗概不需要全文法律样板)
+  timeout: 60
+  rate_limit_per_sec: 3
+
 # ─── 浏览器(用真 Chromium 解 F5 ASM / Cloudflare 等 JS 挑战) ─────────
 browser:
   headless: true                       # 生产为 true;本地调试可改 false 看页面

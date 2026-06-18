@@ -1,7 +1,7 @@
 """汇率富化:BRL → CNY(人民币)估值。
 
 数据源说明(2026-05-28 实测,典型的"别信文档先探接口"):
-    CLAUDE.md 原计划用 **BCB**(Banco Central)汇率,但 BCB PTAX 的开放 OData
+    原计划用 **BCB**(Banco Central)汇率,但 BCB PTAX 的开放 OData
     (``olinda.bcb.gov.br/.../PTAX``)**只含 10 种主流货币,不含 CNY**
     —— ``CotacaoMoedaPeriodo(moeda='CNY')`` 返回空。
     故 BRL→CNY 改用 **AwesomeAPI**(``economia.awesomeapi.com.br``,巴西常用、

@@ -17,6 +17,30 @@ from .exceptions import ConfigError
 DEFAULT_CONFIG_DIR = Path(os.environ.get("CONFIG_DIR", "./config")).resolve()
 
 
+@lru_cache(maxsize=1)
+def _load_dotenv() -> None:
+    """零依赖加载项目根 ``.env`` 到 ``os.environ``(已存在的不覆盖)。
+
+    项目代码直接读 ``os.environ``,但没有自动加载 .env;这里在 settings 首次被用时
+    把 .env 读进来,这样 ``DEEPSEEK_API_KEY`` 等凭据放 .env 即可生效(.env 已 gitignore)。
+    """
+    for cand in (Path(".env"), DEFAULT_CONFIG_DIR.parent / ".env"):
+        if not cand.exists():
+            continue
+        try:
+            for line in cand.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, _, v = line.partition("=")
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k and k not in os.environ:
+                    os.environ[k] = v
+        except OSError:
+            continue
+        break
+
+
 @lru_cache(maxsize=8)
 def load_settings(config_dir: Path | None = None) -> dict[str, Any]:
     """加载 ``settings.yaml`` 为字典。
@@ -135,6 +159,33 @@ def get_enrichment_settings(config_dir: Path | None = None) -> dict[str, Any]:
     return {**_ENRICHMENT_DEFAULTS, **raw}
 
 
+_TRANSLATION_DEFAULTS: dict[str, Any] = {
+    "base_url": "https://api.deepseek.com",
+    "model": "deepseek-v4-flash",
+    "api_key_env": "DEEPSEEK_API_KEY",
+    "batch_size": 20,
+    "max_chars": 500,
+    "timeout": 60,
+    "rate_limit_per_sec": 3,
+}
+
+
+def get_translation_settings(config_dir: Path | None = None) -> dict[str, Any]:
+    """返回 ``translation`` 节点配置 + 从环境读出的 ``api_key``。
+
+    key 不写进 yaml/代码:从 ``.env`` 的 ``DEEPSEEK_API_KEY``(或配置指定的环境变量名)读。
+    ``api_key`` 为空时调用方应回退到离线词典。
+    """
+    _load_dotenv()
+    try:
+        raw = load_settings(config_dir).get("translation", {}) or {}
+    except ConfigError:
+        raw = {}
+    cfg = {**_TRANSLATION_DEFAULTS, **raw}
+    cfg["api_key"] = os.environ.get(str(cfg["api_key_env"]), "")
+    return cfg
+
+
 _FILTER_DEFAULTS: dict[str, Any] = {
     "mode": "hard_delete",
     "filtered_log_dir": "./data/filtered_log",
@@ -192,6 +243,7 @@ __all__ = [
     "get_browser_settings",
     "get_compras_settings",
     "get_enrichment_settings",
+    "get_translation_settings",
     "get_filter_settings",
     "get_default_modalidade_iter",
     "get_modalidades_dict",

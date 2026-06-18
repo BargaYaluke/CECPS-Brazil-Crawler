@@ -2,7 +2,7 @@
 
 **纯离线查表**,读 ``config/regions.yaml``(IBGE 五大区 + 粗略 GDP 分层),
 不调任何外部 API —— 因为 ``contratacoes.uf_sigla`` 是 PNCP 自带字段,区域/GDP
-只是它的确定性衍生维度(契合 CLAUDE.md:规则即配置,改 yaml 不改代码)。
+只是它的确定性衍生维度(规则即配置,改 yaml 不改代码)。
 
 填充目标列:``contratacoes.region_macro`` / ``contratacoes.region_gdp_tier``。
 DB 遍历更新在 :func:`src.pipeline.orchestrator.run_enrichment`。

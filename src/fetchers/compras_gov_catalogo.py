@@ -18,7 +18,7 @@
     }
 
 只负责拉数据 + 把原始 JSON 落到 ``data/raw/compras_catalogo/`` —— 不做富化 / 入库 / 分类,
-那是 enrichers / storage / classifiers 层的事(见 CLAUDE.md §1)。
+那是 enrichers / storage / classifiers 层的事。
 
 实测要点(2026-05-28 真探 API):
     * ``tamanhoPagina`` 取值区间 **10~500**(传 <10 会 400 ``Informe um número de

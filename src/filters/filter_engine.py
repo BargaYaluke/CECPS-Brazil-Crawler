@@ -3,7 +3,7 @@
 读 ``config/filter_rules.yaml`` 的规则,对单条 record dict 求值,返回
 :class:`FilterResult`。**完全是纯函数**,不依赖外部状态,易测试。
 
-两遍过滤(CLAUDE.md §5.3):
+两遍过滤:
     1. :meth:`FilterEngine.evaluate` — 入库前,只用 API 字段
        (F001/F002 用 modalidade_nome,F003 用 amparo_legal_nome,
        所有 soft_tags 用 modalidade_nome)

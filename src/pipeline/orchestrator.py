@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import httpx
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -18,7 +19,11 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from ..core.exceptions import HttpError
 from ..core.http_client import HttpClient
 from ..core.logger import logger
-from ..core.settings import get_enrichment_settings, get_filter_settings
+from ..core.settings import (
+    get_enrichment_settings,
+    get_filter_settings,
+    get_translation_settings,
+)
 from ..core.utils import parse_pncp_id
 from ..enrichers import (
     derive_categoria,
@@ -27,6 +32,7 @@ from ..enrichers import (
     lookup_region,
     to_cny,
 )
+from ..enrichers.translate import text_hash, translate_texts
 from ..fetchers.compras_gov_catalogo import fetch_material_all, fetch_servico_all
 from ..fetchers.edital_pdf import fetch_edital_text
 from ..fetchers.pncp_atualizacao import fetch_atualizacao_all
@@ -42,6 +48,7 @@ from ..storage import (
     Contratacao,
     ContratacaoIn,
     ContratacaoRepository,
+    TranslationRepository,
     ContratoRaw,
     ContratoRepository,
     CursorRepository,
@@ -90,7 +97,7 @@ async def run_publicacao_with_itens(
         4. 解析每条 record 的 ``pncp_id``,**并发**调 ``fetch_itens`` 拉明细
         5. UPSERT itens 表
 
-    单条明细失败 → log warning,不中断整体(CLAUDE.md §7)。
+    单条明细失败 → log warning,不中断整体。
     被硬过滤命中的记录 **不拉明细**(省时间)。
 
     Args:
@@ -640,6 +647,101 @@ def load_pca_from_cache(
     return counters
 
 
+# ─── 标的翻译(DeepSeek 葡→中,写入翻译缓存表)──────────────────────────
+
+
+async def run_translate(
+    *,
+    limit: int | None = None,
+    batch_size: int | None = None,
+) -> dict[str, Any]:
+    """把 ``contratacoes`` 的葡语标的批量翻成中文,写入 ``translation_cache``。
+
+    * 按**原文 hash 去重**:只翻没缓存过的不同文本(语料高度重复,实际调用远少于行数)。
+    * 调 DeepSeek(``deepseek-v4-flash``,见 ``settings.translation``);整批 JSON 返回。
+    * 某批 API 失败 → 该批回退离线词典(``translate_objeto``),仍写缓存(标 model=offline)。
+    * 导出时按 hash 查缓存;命中用译文,未命中再回退离线。
+
+    Args:
+        limit: 最多处理多少**不同**文本(调试用)。
+        batch_size: 每批条数;``None`` 用 ``settings.translation.batch_size``。
+
+    Returns:
+        ``{"distinct", "already_cached", "to_translate", "translated_api",
+           "translated_offline", "failed_batches"}``。
+    """
+    init_db()
+    cfg = get_translation_settings()
+    bs = int(batch_size if batch_size is not None else cfg["batch_size"])
+    has_key = bool(cfg.get("api_key"))
+    if not has_key:
+        logger.warning("pipeline.translate.no_api_key")
+
+    # 1. 取所有 distinct 标的 + 已 API 翻译的 hash(offline 兜底的下次重试升级)
+    with session_scope() as session:
+        objetos = [
+            r[0]
+            for r in session.execute(
+                select(Contratacao.objeto_compra).where(Contratacao.objeto_compra.is_not(None)).distinct()
+            )
+            if r[0] and r[0].strip()
+        ]
+        repo = TranslationRepository(session)
+        skip = repo.api_hashes()
+        total_cached = repo.count()
+
+    # 去重(同 hash 只留一条)+ 过滤已 API 翻译的
+    by_hash: dict[str, str] = {}
+    for o in objetos:
+        h = text_hash(o)
+        if h not in skip and h not in by_hash:
+            by_hash[h] = o
+    todo = list(by_hash.items())
+    if limit is not None:
+        todo = todo[:limit]
+
+    counters: dict[str, Any] = {
+        "distinct": len(objetos),
+        "already_cached": total_cached,
+        "to_translate": len(todo),
+        "translated_api": 0,
+        "translated_offline": 0,
+        "failed_batches": 0,
+    }
+    logger.bind(**{k: counters[k] for k in ("distinct", "already_cached", "to_translate")}).info(
+        "pipeline.translate.plan"
+    )
+    if not todo:
+        logger.bind(**counters).info("pipeline.translate.done")
+        return counters
+
+    # 2. 分批翻译(批失败 → 二分递归 → 单条离线兜底)+ 写缓存
+    async with httpx.AsyncClient() as client:
+        for start in range(0, len(todo), bs):
+            chunk = todo[start : start + bs]
+            hashes = [h for h, _ in chunk]
+            texts = [t for _, t in chunk]
+
+            zhs, models = await translate_texts(texts, client=client)
+
+            with session_scope() as session:
+                repo = TranslationRepository(session)
+                for h, src, zh, m in zip(hashes, texts, zhs, models):
+                    repo.upsert(h, src, zh, m)
+            n_off = sum(1 for m in models if m == "offline")
+            counters["translated_offline"] += n_off
+            counters["translated_api"] += len(chunk) - n_off
+            if n_off:
+                counters["failed_batches"] += 1
+            logger.bind(
+                done=counters["translated_api"] + counters["translated_offline"],
+                total=len(todo),
+            ).info("pipeline.translate.progress")
+
+    logger.bind(**counters).info("pipeline.translate.done")
+    return counters
+
+
 # ─── PDF 富化编排(Edital 全文 + 二次过滤) ────────────────────────────
 
 
@@ -661,7 +763,7 @@ async def run_pdf_enrichment(
            跑 F004-F006,**二次命中则从主表删除 + 写 filtered_log**。
 
     单条失败(下载超时 / 解析错 / 扫描件)→ 标记 extracted=true 但 text 空,
-    不中断整体(CLAUDE.md §7)。
+    不中断整体。
 
     ⚠️ PDF 下载 + 解析很慢(一条 ~30s),务必用 ``limit`` 控制。
 
@@ -1101,6 +1203,7 @@ __all__ = [
     "run_contratos",
     "run_pca",
     "load_pca_from_cache",
+    "run_translate",
     "run_pdf_enrichment",
     "run_classification",
     "run_catalogo",

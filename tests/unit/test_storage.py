@@ -63,6 +63,7 @@ def test_models_create_all_tables(memory_engine) -> None:
         "contratos",
         "pca_itens",
         "catalogo_compras",
+        "translation_cache",
     }
 
 

@@ -1,6 +1,6 @@
 """巴西招投标爬虫包根。
 
-包结构(严格按 CLAUDE.md 第 1 节分层,模块间禁止跨层调用):
+包结构(严格分层,模块间禁止跨层调用):
     core/        基础设施(logger / exceptions / http_client / settings)
     fetchers/    采集层(只负责拉数据,不做业务逻辑)
     enrichers/   富化层(CNPJ / 区域 / 汇率)

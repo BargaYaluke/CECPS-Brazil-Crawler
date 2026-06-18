@@ -51,3 +51,20 @@ data/exports/
 # ─── 日志 ────────────────────────────────────────────────────────────────
 *.log
 logs/
+data/inputs/
+
+# ─── 本地备份快照(★ 不上传) ────────────────────────────────────────────
+/_refactor_backup_20260616/
+
+# ─── analysis/:只跟踪脚本(.py)与说明(.md),排除缓存/产物/中间件 ──────────
+analysis/**/cache/
+analysis/**/outputs/
+analysis/**/outputs_partners/
+analysis/**/verify_in/
+analysis/**/verify_out/
+analysis/**/*.json
+analysis/**/*.xlsx
+analysis/**/*.csv
+analysis/**/*.docx
+analysis/**/*.pdf
+analysis/**/*.png

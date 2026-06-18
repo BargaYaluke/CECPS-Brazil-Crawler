@@ -11,7 +11,7 @@
     cross_border_ecommerce   跨境电商
     culture_sports           文化体育
 
-输出字段(对应 docs/02_字段拓展设计.md):
+输出字段:
     dimension_primary, dimension_secondary,
     dimension_confidence, dimension_match_reason
 """

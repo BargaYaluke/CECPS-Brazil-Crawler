@@ -6,7 +6,7 @@
 * **服务端语义(实测)**:返回"投标截止日 ≤ ``dataFinal`` 的招标"
   — 不是直觉的"≥",**dataFinal 是截止日的上限**,
   反映 PNCP 命名上"proposta"(提案)阶段对应的招标。
-  docs/01 把它描述为"投标期内",但 docs 跟实际行为略有出入,以本实测为准。
+  原设计把它描述为"投标期内",但与实际行为略有出入,以本实测为准。
 * 参数只有**一个日期** ``dataFinal``(没有 dataInicial)
 * 返回的 record schema 完全跟 publicacao 一致,直接复用 :class:`PublicacaoRaw`
 
@@ -157,8 +157,7 @@ async def fetch_proposta_all(
         原始 record dict。
 
     Notes:
-        404 / 空响应只记 warning,跳过当前 modalidade 继续下一个
-        (CLAUDE.md §7)。
+        404 / 空响应只记 warning,跳过当前 modalidade 继续下一个。
     """
     pncp_cfg = get_pncp_settings()
     codes = list(modalidade_codes) if modalidade_codes else get_default_modalidade_iter()

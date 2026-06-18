@@ -3,7 +3,6 @@
 只负责拉数据 + 把原始 JSON 落到 ``data/raw/publicacao/``。
 不做过滤 / 富化 / 入库 — 那是后续层的事。
 
-参考: docs/01_爬取来源设计.md 第 1.1 节
 Swagger: https://pncp.gov.br/api/consulta/swagger-ui/index.html
 
 实现说明
@@ -162,7 +161,7 @@ async def fetch_publicacao_all(
         原始 record dict(对应 API 返回的 ``data[i]``,不做任何字段转换)。
 
     Notes:
-        404 / 空响应只记 warning,流程继续到下一个 modalidade(见 CLAUDE.md §7)。
+        404 / 空响应只记 warning,流程继续到下一个 modalidade。
     """
     pncp_cfg = get_pncp_settings()
     codes = list(modalidade_codes) if modalidade_codes else get_default_modalidade_iter()

@@ -136,14 +136,17 @@ def test_pca_explode_items(real_envelope: dict) -> None:
     exploded = pca.explode_items(raw_json=r)
 
     assert len(exploded) == 10
-    for ii in exploded:
+    raw_items = r["itens"]
+    for idx, ii in enumerate(exploded):
         # 头信息冗余正确
         assert ii.id_pca_pncp == pca.idPcaPncp
         assert ii.ano_pca == pca.anoPca
         assert ii.orgao_entidade_cnpj == pca.orgaoEntidadeCnpj
         # numero_item 与原数据一致
         assert ii.numero_item >= 1
-        assert ii.raw_json == r
+        # raw_json 只留底自己那条 item(不再复制整条 PCA 头 → 避免平方级膨胀)
+        assert ii.raw_json == raw_items[idx]
+        assert "itens" not in (ii.raw_json or {})
 
 
 # ─── PcaRepository ─────────────────────────────────────────────────────

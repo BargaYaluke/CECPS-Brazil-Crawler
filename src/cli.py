@@ -31,6 +31,7 @@ from .pipeline.orchestrator import (
     run_pdf_enrichment,
     run_proposta_with_itens,
     run_publicacao_with_itens,
+    run_translate,
 )
 
 
@@ -258,6 +259,26 @@ def _make_progress_sink():
             click.echo(
                 f"[{ts}] 目录入库完成: material={x.get('material', 0)} "
                 f"servico={x.get('servico', 0)} total={x.get('total', 0)}",
+                err=True,
+            )
+        # ─── 标的翻译事件 ──────────────────────────────────────────
+        elif event == "pipeline.translate.plan":
+            click.echo(
+                f"[{ts}] 翻译计划: 共 {x.get('distinct', 0)} 条不同标的,已缓存 "
+                f"{x.get('already_cached', 0)},待翻 {x.get('to_translate', 0)}",
+                err=True,
+            )
+        elif event == "pipeline.translate.no_api_key":
+            click.echo(f"[{ts}] ⚠ 未配置 DEEPSEEK_API_KEY,将回退离线词典翻译", err=True)
+        elif event == "pipeline.translate.progress":
+            click.echo(
+                f"[{ts}]   已翻 {x.get('done', 0)}/{x.get('total', 0)}({x.get('model')})...",
+                err=True,
+            )
+        elif event == "pipeline.translate.done":
+            click.echo(
+                f"[{ts}] 翻译完成: API {x.get('translated_api', 0)} 条 / 离线 "
+                f"{x.get('translated_offline', 0)} 条 / 失败批 {x.get('failed_batches', 0)}",
                 err=True,
             )
         # ─── 富化(region / fx / orgao / catalogo-itens)事件 ──────
@@ -1228,6 +1249,53 @@ def fetch_editais_cmd(limit: int, concurrency: int, redo: bool, progress: bool) 
             logger.remove(progress_sink_id)
 
 
+# ─── translate(标的葡→中,DeepSeek)──────────────────────────────────
+
+
+@cli.command("translate")
+@click.option(
+    "--limit",
+    type=int,
+    default=None,
+    help="最多翻多少条不同标的(调试用;不传则全部未缓存的)",
+)
+@click.option("--batch-size", type=int, default=None, help="每批条数(默认 settings.translation.batch_size)")
+@click.option(
+    "--progress/--no-progress",
+    default=True,
+    show_default=True,
+    help="进度行打到 stderr",
+)
+def translate_cmd(limit: int | None, batch_size: int | None, progress: bool) -> None:
+    """把招标标的(葡语)批量翻成中文,写入翻译缓存(供导出 Excel 用)。
+
+    \b
+    用 DeepSeek(deepseek-v4-flash),key 放 .env 的 DEEPSEEK_API_KEY。
+    按原文去重 + 缓存:只翻没翻过的,重跑很快;无 key 时回退离线词典。
+    导出 export-excel 时自动读这个缓存填「标的(中文梗概)」列。
+
+    \b
+    示例:
+        python -m src.cli translate              # 翻所有未缓存的标的
+        python -m src.cli translate --limit 100  # 先试 100 条
+    """
+    progress_sink_id: int | None = None
+    if progress:
+        logger.remove()
+        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    try:
+        counters = asyncio.run(run_translate(limit=limit, batch_size=batch_size))
+        click.echo(
+            f"\nDone: 待翻 {counters['to_translate']}  "
+            f"API {counters['translated_api']}  离线 {counters['translated_offline']}  "
+            f"失败批 {counters['failed_batches']}  (已缓存 {counters['already_cached']})",
+            err=True,
+        )
+    finally:
+        if progress_sink_id is not None:
+            logger.remove(progress_sink_id)
+
+
 # ─── classify(六大维度分类)──────────────────────────────────────────
 
 
@@ -1496,18 +1564,28 @@ def filter_cmd(mode: str | None, progress: bool) -> None:
     default=None,
     help="每张表最多导多少行(不传则全部)",
 )
-def export_excel_cmd(out_path: str, limit: int | None) -> None:
+@click.option(
+    "--hide-expired",
+    is_flag=True,
+    default=False,
+    help="招标主表里隐藏已过期(投标截止<今天)的标的",
+)
+def export_excel_cmd(out_path: str, limit: int | None, hide_expired: bool) -> None:
     """把数据库导成多 Sheet Excel 报告(业务方直接打开分析)。
 
     \b
-    6 个 Sheet:招标主表 / 采购明细 / 已签合同 / 年度采购计划 / 维度透视 / 过滤审计。
-    招标主表带六大维度中文标签;金额日期已格式化;首行冻结 + 自动筛选。
+    9 个 Sheet:招标主表 / 采购明细 / 已签合同 / 年度采购计划 / 机构画像 /
+    维度透视 / 亲外企机构 / 过滤审计 / 字段说明。
+    招标主表带:六大维度中文标签、标的中文梗概、时效状态、采购方亲外企标注;
+    金额日期已格式化;首行冻结 + 自动筛选。最后一页『字段说明』解释各字段含义。
 
     \b
     示例:
         python -m src.cli export-excel --out report.xlsx
+        python -m src.cli export-excel --hide-expired      # 只看还能投的
+        python -m src.cli export-excel --limit 5000         # 轻量版(每页≤5000行)
     """
-    stats = export_to_excel(out_path, limit=limit)
+    stats = export_to_excel(out_path, limit=limit, hide_expired=hide_expired)
     click.echo(f"\n已导出: {Path(out_path).resolve()}", err=True)
     for sheet, n in stats.items():
         click.echo(f"  {sheet}: {n} 行", err=True)

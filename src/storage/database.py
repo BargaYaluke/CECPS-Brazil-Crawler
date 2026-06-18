@@ -3,7 +3,7 @@
 从 ``config/settings.yaml`` 的 ``storage.database_url`` 读连接串
 (默认 ``sqlite:///./data/procurement.db``);测试时显式传内存 DSN。
 
-CLAUDE.md §6 关于事务的约定:写操作走 :func:`session_scope`,
+事务约定:写操作走 :func:`session_scope`,
 异常自动 rollback。
 """
 from __future__ import annotations
