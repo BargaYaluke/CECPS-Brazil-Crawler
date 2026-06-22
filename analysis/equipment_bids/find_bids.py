@@ -13,7 +13,7 @@
 
 产物:data/exports/巴西设备产品采购标_20-200万CNY.xlsx
 """
-import sys, json, asyncio
+import sys, json, asyncio, time
 from pathlib import Path
 from datetime import date
 import sqlite3
@@ -26,6 +26,7 @@ ROOT = Path(r"C:\巴西爬虫")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import deepseek_client as ml  # 自包含 DeepSeek 客户端 + 磁盘缓存(本目录)
 
+_t0 = time.perf_counter()
 # 模式:默认 active(仅未过期);传 all → 不限时效(含已过期)
 MODE = "all" if len(sys.argv) > 1 and sys.argv[1].lower() in ("all", "全部", "不限") else "active"
 
@@ -258,3 +259,14 @@ print("\n类别分布(产品标):")
 print(summ.to_string(index=False))
 print(f"\n产品标金额合计:{prod['预估金额(万CNY)'].sum():.0f} 万CNY  |  剩余天数中位 {int(prod['剩余天数'].median())} 天")
 print(f"剔除项类别:{svc['物资类别'].value_counts().to_dict()}")
+
+# 记一条阶段指标到 logs/pipeline_metrics.csv(与爬虫各阶段统一)
+try:
+    sys.path.insert(0, str(ROOT))
+    from src.core.logger import log_stage
+    log_stage(f"设备产品表(find_bids{' all' if MODE == 'all' else ''})", "OK",
+              f"产品标={len(prod_x)} 候选={len(c)} 剔除={len(svc_x)} "
+              f"合计={prod['预估金额(万CNY)'].sum():.0f}万CNY",
+              time.perf_counter() - _t0)
+except Exception as _e:
+    print("(log_stage 跳过:", _e, ")")

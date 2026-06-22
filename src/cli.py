@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -17,7 +18,7 @@ from typing import Any
 import click
 
 from . import __version__
-from .core.logger import logger
+from .core.logger import log_stage, logger
 from .fetchers.pncp_publicacao import fetch_publicacao_all
 from .exporters.excel import export_to_excel
 from .pipeline.orchestrator import (
@@ -557,6 +558,7 @@ def fetch_and_store_cmd(
     if progress:
         logger.remove()
         progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    _t0 = time.perf_counter()
     try:
         counters = asyncio.run(
             run_publicacao_with_itens(
@@ -580,6 +582,10 @@ def fetch_and_store_cmd(
             f"mode={counters['filter_mode']}",
             err=True,
         )
+        log_stage("采集-发布(fetch-and-store)", "OK",
+                  f"标={counters['contratacoes_kept']} 明细={counters['itens']} "
+                  f"过滤={counters['contratacoes_filtered']}",
+                  time.perf_counter() - _t0)
         if rule_hits:
             click.echo(
                 f"  硬过滤命中: " + ", ".join(f"{k}={v}" for k, v in sorted(rule_hits.items())),
@@ -698,6 +704,7 @@ def fetch_atualizacao_cmd(
     if progress:
         logger.remove()
         progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    _t0 = time.perf_counter()
     try:
         counters = asyncio.run(
             run_atualizacao_incremental(
@@ -723,6 +730,10 @@ def fetch_atualizacao_cmd(
             f"itens={counters['itens']}",
             err=True,
         )
+        log_stage("采集-增量(atualizacao)", "OK",
+                  f"标={counters['contratacoes_kept']} 明细={counters['itens']} "
+                  f"窗口={counters['date_start']}~{counters['date_end']}",
+                  time.perf_counter() - _t0)
         if rule_hits:
             click.echo(
                 "  硬过滤命中: " + ", ".join(f"{k}={v}" for k, v in sorted(rule_hits.items())),
@@ -828,6 +839,7 @@ def fetch_proposta_cmd(
     if progress:
         logger.remove()
         progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    _t0 = time.perf_counter()
     try:
         counters = asyncio.run(
             run_proposta_with_itens(
@@ -851,6 +863,9 @@ def fetch_proposta_cmd(
             f"mode={counters['filter_mode']}",
             err=True,
         )
+        log_stage("采集-还能投(proposta)", "OK",
+                  f"标={counters['contratacoes_kept']} 明细={counters['itens']}",
+                  time.perf_counter() - _t0)
         if rule_hits:
             click.echo(
                 "  硬过滤命中: " + ", ".join(f"{k}={v}" for k, v in sorted(rule_hits.items())),
@@ -915,6 +930,7 @@ def translate_cmd(limit: int | None, batch_size: int | None, progress: bool) -> 
     if progress:
         logger.remove()
         progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    _t0 = time.perf_counter()
     try:
         counters = asyncio.run(run_translate(limit=limit, batch_size=batch_size))
         click.echo(
@@ -923,6 +939,11 @@ def translate_cmd(limit: int | None, batch_size: int | None, progress: bool) -> 
             f"失败批 {counters['failed_batches']}  (已缓存 {counters['already_cached']})",
             err=True,
         )
+        log_stage("翻译(translate)", "OK",
+                  f"待翻={counters['to_translate']} API={counters['translated_api']} "
+                  f"离线={counters['translated_offline']} 缓存={counters['already_cached']} "
+                  f"失败批={counters['failed_batches']}",
+                  time.perf_counter() - _t0)
     finally:
         if progress_sink_id is not None:
             logger.remove(progress_sink_id)
@@ -971,6 +992,7 @@ def enrich_cmd(
     if progress:
         logger.remove()
         progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    _t0 = time.perf_counter()
     try:
         counters = asyncio.run(
             run_enrichment(
@@ -988,6 +1010,9 @@ def enrich_cmd(
             + (f" (1 BRL={rate} CNY)" if rate else ""),
             err=True,
         )
+        log_stage("富化(enrich)", "OK",
+                  f"region={counters['region_filled']} fx={counters['fx_filled']} 汇率={rate}",
+                  time.perf_counter() - _t0)
     finally:
         if progress_sink_id is not None:
             logger.remove(progress_sink_id)
@@ -1127,12 +1152,11 @@ def filter_cmd(mode: str | None, progress: bool) -> None:
     help="招标主表里隐藏已过期(投标截止<今天)的标的",
 )
 def export_excel_cmd(out_path: str, limit: int | None, hide_expired: bool) -> None:
-    """把数据库导成多 Sheet Excel 报告(业务方直接打开分析)。
+    """把数据库导成多 Sheet Excel 数据快照(业务方直接打开分析)。
 
     \b
-    9 个 Sheet:招标主表 / 采购明细 / 已签合同 / 年度采购计划 / 机构画像 /
-    维度透视 / 亲外企机构 / 过滤审计 / 字段说明。
-    招标主表带:六大维度中文标签、标的中文梗概、时效状态、采购方亲外企标注;
+    4 个 Sheet:招标主表 / 采购明细 / 过滤审计 / 字段说明。
+    招标主表带:标的中文梗概、时效状态、金额(BRL/CNY)、大区/GDP分层;
     金额日期已格式化;首行冻结 + 自动筛选。最后一页『字段说明』解释各字段含义。
 
     \b
@@ -1141,10 +1165,14 @@ def export_excel_cmd(out_path: str, limit: int | None, hide_expired: bool) -> No
         python -m src.cli export-excel --hide-expired      # 只看还能投的
         python -m src.cli export-excel --limit 5000         # 轻量版(每页≤5000行)
     """
+    _t0 = time.perf_counter()
     stats = export_to_excel(out_path, limit=limit, hide_expired=hide_expired)
     click.echo(f"\n已导出: {Path(out_path).resolve()}", err=True)
     for sheet, n in stats.items():
         click.echo(f"  {sheet}: {n} 行", err=True)
+    log_stage("导出report(export-excel)", "OK",
+              " ".join(f"{k}={v}" for k, v in stats.items()),
+              time.perf_counter() - _t0)
 
 
 if __name__ == "__main__":

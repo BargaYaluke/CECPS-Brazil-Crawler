@@ -38,16 +38,18 @@ python analysis/equipment_bids/find_bids.py                    # 生成「设备
 **周更一键脚本**(自动跑 增量爬取→还能投快照→富化→翻译→导出 report.xlsx→生成设备产品表):
 
 ```powershell
+# 首次(空库初始化):抓当前"还能投"的开放标全量
+powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -First
+# 日常每周(增量更新):以后每周跑这一条
 powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1
-# 首跑/补全:回溯过去 N 天发布的标
-powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -BackfillDays 60
 # 额外出"全量含过期"表
 powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -AllMode
 ```
 
-- 常规周更走 `fetch-atualizacao` 增量(`sync_cursor` 记上次拉取位点,首跑兜底 today-7d)。
-- 计划任务示例(每周一 07:00)见 `scripts\run_weekly.ps1` 头部注释。
-- 任一步失败脚本返回非 0(便于计划任务标红)。
+- **首次** `-First` 走 `fetch-proposta`,抓截止日在未来一个月内、当前还能投的开放标(不灌历史发布数据)。
+- **周更**(无参)走 `fetch-atualizacao` 增量(`sync_cursor` 记位点)+ 刷新开放标快照。
+- `-OpenHorizonDays N` 调开放标快照的未来跨度(默认 30 天)。
+- 计划任务示例(每周一 07:00)见 `scripts\run_weekly.ps1` 头部注释;任一步失败脚本返回非 0。
 
 设备/产品采购标的用法见 [analysis/README.md](analysis/README.md)。
 

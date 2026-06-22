@@ -27,7 +27,7 @@ def test_settings_defaults() -> None:
     cfg = get_http_settings()
     assert cfg["user_agent"] == "BrazilProcurementBot/1.0"
     assert cfg["timeout"] == 30
-    assert cfg["max_retries"] == 3
+    assert cfg["max_retries"] == 6
 
 
 def test_cli_help_exits_zero() -> None:

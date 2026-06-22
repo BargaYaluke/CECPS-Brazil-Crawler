@@ -1,26 +1,30 @@
-# run_weekly.ps1 -- lite weekly one-click pipeline:
-#   crawl -> enrich/translate -> report.xlsx -> equipment/product bids table.
+# run_weekly.ps1 -- lite pipeline: crawl -> enrich/translate -> report.xlsx -> equipment bids table.
+#
+# TWO modes:
+#   First crawl (empty DB):   -First   -> fetch the current OPEN-bid universe (proposta).
+#   Weekly incremental:       (no flag) -> incremental new/changed (atualizacao) + refresh open pool.
 #
 # NOTE: kept ASCII-only on purpose. Windows PowerShell 5.1 misreads non-ASCII in a
 # BOM-less UTF-8 .ps1, so all script text is English; the Chinese progress lines come
 # from the Python CLI itself (it sets PYTHONIOENCODING=utf-8).
 #
 # Usage (from anywhere; it cd's to the repo root itself):
-#   powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1
-#       -> regular weekly run: incremental crawl (sync_cursor) + open-bid snapshot.
-#   powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -BackfillDays 60
-#       -> first run / periodic backfill: also fetch-and-store the last 60 publication days.
-#   powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -AllMode
-#       -> additionally emit the "all (incl. expired)" equipment table.
+#   FIRST TIME (DB is empty -> populate with currently-biddable tenders):
+#     powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -First
+#   EVERY WEEK after that (incremental update):
+#     powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1
+#   Options:
+#     -AllMode             also emit the "all (incl. expired)" equipment table
+#     -OpenHorizonDays N   open-bid snapshot reaches N days into the future (default 30)
 #
-# Schedule weekly via Task Scheduler (example, Monday 07:00; replace <repo> with the
-# absolute repo path):
+# Schedule the weekly run via Task Scheduler (example, Monday 07:00; replace <repo>):
 #   schtasks /Create /TN "brazil-weekly" /SC WEEKLY /D MON /ST 07:00 ^
 #     /TR "powershell -ExecutionPolicy Bypass -File <repo>\scripts\run_weekly.ps1"
 
 param(
-    [int]$BackfillDays = 0,   # >0: fetch-and-store the last N publication days first (first run / backfill)
-    [switch]$AllMode          # also run find_bids.py in "all" mode (includes expired)
+    [switch]$First,              # first crawl: grab the current open-bid universe into an empty DB
+    [switch]$AllMode,            # also run find_bids.py in "all" mode (includes expired)
+    [int]$OpenHorizonDays = 30   # open-bid snapshot: tenders with a deadline up to N days ahead
 )
 
 $ErrorActionPreference = "Continue"
@@ -30,7 +34,17 @@ Set-Location (Split-Path $PSScriptRoot -Parent)   # -> repo root
 $py = "C:\Users\hsm07\miniconda3\envs\brazil_crawler\python.exe"
 
 $today = (Get-Date).ToString("yyyy-MM-dd")
+$dataFinal = (Get-Date).AddDays($OpenHorizonDays).ToString("yyyy-MM-dd")
 $results = @()
+
+# ---- logging: full run transcript (logs/run_<ts>.log) + per-stage metrics CSV ----
+# The per-stage metrics CSV (logs/pipeline_metrics.csv, columns 时间/阶段/状态/关键指标/耗时)
+# is written by the Python side (src.core.logger.log_stage) after each stage.
+$logDir = Join-Path (Get-Location) "logs"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$runLog = Join-Path $logDir ("run_" + (Get-Date).ToString("yyyy-MM-dd_HHmmss") + ".log")
+$metricsCsv = Join-Path $logDir "pipeline_metrics.csv"
+try { Start-Transcript -Path $runLog | Out-Null } catch {}
 
 # Run a labelled step. $argv is the full argument list passed to python (after $py).
 function Run([string]$name, [string[]]$argv) {
@@ -48,30 +62,24 @@ function Run([string]$name, [string[]]$argv) {
     $script:results += [pscustomobject]@{ Step = $name; Status = $tag; Seconds = [int]$sw.Elapsed.TotalSeconds }
 }
 
-Write-Host ("=== Lite weekly pipeline | $today ===") -ForegroundColor Yellow
+$mode = if ($First) { "FIRST crawl" } else { "WEEKLY incremental" }
+Write-Host ("=== Lite pipeline [{0}] | {1} | open-bid horizon -> {2} ===" -f $mode, $today, $dataFinal) -ForegroundColor Yellow
 
-# 0) optional backfill: fetch-and-store the last N publication days (first run / periodic).
-if ($BackfillDays -gt 0) {
-    $start = (Get-Date).AddDays(-$BackfillDays).ToString("yyyy-MM-dd")
-    Run "0-backfill" @("-m", "src.cli", "fetch-and-store", "--start", $start, "--end", $today)
+# ---- crawl ----
+if ($First) {
+    # First run on an empty DB: pull the current OPEN-bid universe (tenders still receiving proposals,
+    # with deadline up to $dataFinal) plus their line items. No historical-publication backfill.
+    Run "1-proposta-init" @("-m", "src.cli", "fetch-proposta", "--data-final", $dataFinal)
+} else {
+    # Weekly: incremental new/changed tenders via sync_cursor, then refresh the open-bid snapshot.
+    Run "1-atualizacao" @("-m", "src.cli", "fetch-atualizacao")
+    Run "2-proposta-refresh" @("-m", "src.cli", "fetch-proposta", "--data-final", $dataFinal)
 }
 
-# 1) incremental crawl: PNCP /contratacoes/atualizacao via sync_cursor (first run falls back to today-7d).
-Run "1-atualizacao" @("-m", "src.cli", "fetch-atualizacao")
-
-# 2) open-bid snapshot: tenders still open for proposals (keeps the un-expired pool fresh).
-Run "2-proposta" @("-m", "src.cli", "fetch-proposta")
-
-# 3) enrich: region + BRL->CNY (valor_cny_estimado, required by the equipment table's CNY band).
+# ---- enrich / translate / export / equipment table (same for both modes) ----
 Run "3-enrich" @("-m", "src.cli", "enrich")
-
-# 4) translate: PT->CN tender summaries (DeepSeek, cached by source text).
 Run "4-translate" @("-m", "src.cli", "translate")
-
-# 5) export Excel data snapshot (report.xlsx).
 Run "5-export" @("-m", "src.cli", "export-excel", "--out", "data/exports/report.xlsx")
-
-# 6) generate the equipment/product bids table (active = un-expired).
 Run "6-equipment-bids" @("analysis/equipment_bids/find_bids.py")
 if ($AllMode) {
     Run "6b-equipment-bids-all" @("analysis/equipment_bids/find_bids.py", "all")
@@ -86,6 +94,10 @@ if (Test-Path $snapshot) { Write-Host ("Data snapshot: " + $snapshot) -Foregroun
 $equip = Get-ChildItem -Path "data\exports" -Filter "*20-200*CNY*.xlsx" -ErrorAction SilentlyContinue |
     Sort-Object Name | Select-Object -First 1
 if ($equip) { Write-Host ("Equipment bids: " + $equip.FullName) -ForegroundColor Green }
+Write-Host ("Run log:        " + $runLog) -ForegroundColor Green
+Write-Host ("Stage metrics:  " + $metricsCsv) -ForegroundColor Green
+
+try { Stop-Transcript | Out-Null } catch {}
 
 # non-zero exit if any step failed (so Task Scheduler can flag it).
 if ($results | Where-Object { $_.Status -ne "OK" }) { exit 1 } else { exit 0 }

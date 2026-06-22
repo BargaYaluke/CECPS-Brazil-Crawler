@@ -244,7 +244,7 @@ class HttpClient:
 
         @retry(
             stop=stop_after_attempt(self.max_retries),
-            wait=wait_exponential(multiplier=2, min=2, max=30),
+            wait=wait_exponential(multiplier=2, min=2, max=60),
             retry=retry_if_exception_type(
                 (httpx.TransportError, httpx.HTTPStatusError, RateLimitExceededError)
             ),
@@ -256,7 +256,19 @@ class HttpClient:
             assert self._client is not None
             resp = await self._client.get(url, **kwargs)
             if resp.status_code == 429:
-                # 限流 → 走 tenacity 重试
+                # 限流 → 先按服务端 Retry-After 冷却(若给),再走 tenacity 重试
+                ra = resp.headers.get("Retry-After")
+                delay = 0.0
+                if ra:
+                    try:
+                        delay = float(ra)
+                    except ValueError:
+                        delay = 0.0  # 忽略 HTTP-date 形式,退回指数退避
+                logger.bind(url=str(resp.request.url), retry_after=ra).warning(
+                    "http.rate_limited_429"
+                )
+                if delay > 0:
+                    await asyncio.sleep(min(delay, 120.0))
                 raise RateLimitExceededError(
                     "429 Too Many Requests",
                     status_code=429,

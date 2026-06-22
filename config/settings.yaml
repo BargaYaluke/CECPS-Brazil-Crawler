@@ -7,14 +7,14 @@ http:
   base_url: "https://pncp.gov.br"     # 兜底 base_url
   timeout: 30                          # 单次请求超时(秒)
   rate_limit_per_second: 10            # 每秒最大请求数(令牌桶)
-  max_retries: 3                       # 指数退避重试次数(base=2s,只针对 5xx/429/网络错)
+  max_retries: 6                       # 指数退避重试次数(base=2s,max=60s,只针对 5xx/429/网络错;429 还会读 Retry-After)
   user_agent: "BrazilProcurementBot/1.0"
 
 # ─── PNCP API(供 fetchers 使用,覆盖 http 默认) ──────────────────────
 pncp:
   base_url: "https://pncp.gov.br/api/consulta/v1"
   timeout: 30
-  rate_limit_per_sec: 10               # 注:节点内沿用 _sec 命名
+  rate_limit_per_sec: 4                # PNCP consulta API 限流较严,放慢到 4 req/s 避免 429(配合 max_retries + Retry-After)
   page_size: 50                        # 每页条数。注:上限按端点不同 —— publicacao/atualizacao/proposta(/contratacoes/*)上限 50(>50 报 400);contratos / pca 可到 500。fetcher 会自动夹取
   # 列表接口(publicacao/atualizacao/proposta/contratos)的传输方式:
   #   auto    httpx 优先,撞 F5 挑战自动 fallback 真浏览器(默认,F5 已撤时快 5-10x)
