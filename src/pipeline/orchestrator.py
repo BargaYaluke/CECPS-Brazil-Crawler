@@ -13,8 +13,7 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import func, select
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy import delete, select
 
 from ..core.exceptions import HttpError
 from ..core.http_client import HttpClient
@@ -33,7 +32,6 @@ from ..enrichers import (
 from ..enrichers.translate import text_hash, translate_texts
 from ..fetchers.pncp_atualizacao import fetch_atualizacao_all
 from ..fetchers.pncp_itens import fetch_itens
-from ..fetchers.pncp_proposta import fetch_proposta_all
 from ..fetchers.pncp_publicacao import fetch_publicacao_all
 from ..filters import apply_result, get_default_engine, write_filtered_log
 from ..storage import (
@@ -360,57 +358,114 @@ async def _run_list_pipeline(
     return counters
 
 
-# ─── proposta 编排 ─────────────────────────────────────────────────────
+# ─── 清理过期招标(周更前置:删已过期 + 写删除日志)──────────────────────
 
 
-async def run_proposta_with_itens(
-    data_final: date | str,
-    modalidade_codes: list[int] | None = None,
-    *,
-    page_size: int | None = None,
-    cache_root: Path | None = None,
-    limit: int | None = None,
-    itens_concurrency: int = 5,
-    skip_itens: bool = False,
+def run_purge_expired(
+    today: date | None = None,
+    log_path: Path | str | None = None,
 ) -> dict[str, Any]:
-    """端到端:按"投标截止日 ≥ data_final"拉招标 → 过滤 → 入库 → 拉明细。
+    """删除已过期招标(``data_encerramento_proposta < 今天 00:00``)及其 itens 明细。
 
-    跟 :func:`run_publicacao_with_itens` 同一套 pipeline,**不涉及 cursor** —
-    proposta 是快照型查询("此刻还能投的"),每天跑一次直接 UPSERT 即可。
-    新 pncp_id 会新增,已入库的会被更新到最新状态。
+    被删标的关键信息**先**追加写入 ``logs/expired_purged.csv``(累积留档),再删库。
+    不删:截止日为今天/未来的、2099 哨兵(无截止)、截止日为 NULL 的(时效未知)。
+    供周更增量更新前置调用,避免库里越攒越多过期标。
 
-    Args:
-        data_final: 投标截止日参数(``YYYY-MM-DD`` 或 ``date``)。
-        modalidade_codes: ``None`` → 用 modalidades.yaml 的 default_iter。
-        其余参数同 :func:`run_publicacao_with_itens`。
+    Returns:
+        ``{"expired_found", "contratacoes_deleted", "itens_deleted", "log_path"}``。
     """
+    import csv
+
     init_db()
-    return await _run_list_pipeline(
-        fetch_iter=fetch_proposta_all(
-            data_final,
-            modalidade_codes,
-            page_size=page_size,
-            cache_root=cache_root,
-        ),
-        limit=limit,
-        itens_concurrency=itens_concurrency,
-        skip_itens=skip_itens,
-    )
+    today = today or date.today()
+    cutoff = datetime.combine(today, datetime.min.time())  # 今天 00:00
+    root = Path(__file__).resolve().parents[2]
+    log_path = Path(log_path) if log_path is not None else root / "logs" / "expired_purged.csv"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
 
+    counters: dict[str, Any] = {
+        "expired_found": 0, "contratacoes_deleted": 0, "itens_deleted": 0,
+        "log_path": str(log_path),
+    }
 
-# ─── contratos 编排(独立,不走招标 pipeline)────────────────────────────
+    with session_scope() as session:
+        rows = session.execute(
+            select(
+                Contratacao.pncp_id, Contratacao.objeto_compra,
+                Contratacao.valor_total_estimado, Contratacao.valor_cny_estimado,
+                Contratacao.data_encerramento_proposta, Contratacao.orgao_razao_social,
+                Contratacao.uf_sigla, Contratacao.municipio_nome, Contratacao.modalidade_nome,
+            ).where(
+                Contratacao.data_encerramento_proposta.is_not(None),
+                Contratacao.data_encerramento_proposta < cutoff,
+            )
+        ).all()
+        counters["expired_found"] = len(rows)
+        if not rows:
+            logger.info("pipeline.purge_expired.none")
+            return counters
 
+        # 1) 先把被删标的信息追加进删除日志(utf-8-sig 首建带 BOM,Excel 不乱码)
+        is_new = not log_path.exists()
+        with log_path.open("a", encoding=("utf-8-sig" if is_new else "utf-8"), newline="") as fh:
+            w = csv.writer(fh)
+            if is_new:
+                w.writerow(["删除时间", "PNCP编号", "标的", "预估金额BRL", "预估金额CNY",
+                            "提交截止", "采购机构", "州", "城市", "招标方式"])
+            now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            for r in rows:
+                w.writerow([
+                    now, r.pncp_id, (r.objeto_compra or "").replace("\n", " ")[:120],
+                    r.valor_total_estimado, r.valor_cny_estimado,
+                    str(r.data_encerramento_proposta or ""), r.orgao_razao_social or "",
+                    r.uf_sigla or "", r.municipio_nome or "", r.modalidade_nome or "",
+                ])
 
-# ─── PCA 编排(独立) ───────────────────────────────────────────────────
+        # 2) 删 itens + contratacoes(按 pncp_id 分块,避开 SQLite 变量上限 ~999)
+        ids = [r.pncp_id for r in rows]
+        for i in range(0, len(ids), 500):
+            chunk = ids[i:i + 500]
+            res = session.execute(delete(Item).where(Item.pncp_id.in_(chunk)))
+            counters["itens_deleted"] += res.rowcount or 0
+            session.execute(delete(Contratacao).where(Contratacao.pncp_id.in_(chunk)))
+        counters["contratacoes_deleted"] = len(ids)
+
+    logger.bind(
+        expired_found=counters["expired_found"],
+        contratacoes_deleted=counters["contratacoes_deleted"],
+        itens_deleted=counters["itens_deleted"],
+    ).info("pipeline.purge_expired.done")
+    return counters
 
 
 # ─── 标的翻译(DeepSeek 葡→中,写入翻译缓存表)──────────────────────────
+
+
+def _working_filter(stmt, *, active_only: bool, cny_min: float | None, cny_max: float | None):
+    """给 contratacoes 的 select 加『未过期 + CNY 区间』过滤(translate / export 复用)。
+
+    未过期 = ``data_encerramento_proposta >= 今天 00:00``;CNY 用 ``valor_cny_estimado``
+    (需先跑 enrich 的 fx 才有值)。各条件都可选,不传则不过滤。
+    """
+    if active_only:
+        stmt = stmt.where(
+            Contratacao.data_encerramento_proposta.is_not(None),
+            Contratacao.data_encerramento_proposta >= datetime.combine(date.today(), datetime.min.time()),
+        )
+    if cny_min is not None:
+        stmt = stmt.where(Contratacao.valor_cny_estimado >= cny_min)
+    if cny_max is not None:
+        stmt = stmt.where(Contratacao.valor_cny_estimado <= cny_max)
+    return stmt
 
 
 async def run_translate(
     *,
     limit: int | None = None,
     batch_size: int | None = None,
+    active_only: bool = False,
+    cny_min: float | None = None,
+    cny_max: float | None = None,
 ) -> dict[str, Any]:
     """把 ``contratacoes`` 的葡语标的批量翻成中文,写入 ``translation_cache``。
 
@@ -436,13 +491,11 @@ async def run_translate(
 
     # 1. 取所有 distinct 标的 + 已 API 翻译的 hash(offline 兜底的下次重试升级)
     with session_scope() as session:
-        objetos = [
-            r[0]
-            for r in session.execute(
-                select(Contratacao.objeto_compra).where(Contratacao.objeto_compra.is_not(None)).distinct()
-            )
-            if r[0] and r[0].strip()
-        ]
+        _stmt = _working_filter(
+            select(Contratacao.objeto_compra).where(Contratacao.objeto_compra.is_not(None)),
+            active_only=active_only, cny_min=cny_min, cny_max=cny_max,
+        ).distinct()
+        objetos = [r[0] for r in session.execute(_stmt) if r[0] and r[0].strip()]
         repo = TranslationRepository(session)
         skip = repo.api_hashes()
         total_cached = repo.count()
@@ -493,6 +546,8 @@ async def run_translate(
             logger.bind(
                 done=counters["translated_api"] + counters["translated_offline"],
                 total=len(todo),
+                api=counters["translated_api"],
+                offline=counters["translated_offline"],
             ).info("pipeline.translate.progress")
 
     logger.bind(**counters).info("pipeline.translate.done")
@@ -567,7 +622,7 @@ async def run_enrichment(
 __all__ = [
     "run_publicacao_with_itens",
     "run_atualizacao_incremental",
-    "run_proposta_with_itens",
+    "run_purge_expired",
     "run_translate",
     "run_enrichment",
 ]

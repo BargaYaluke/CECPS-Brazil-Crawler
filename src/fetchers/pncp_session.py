@@ -1,6 +1,6 @@
 """PNCP 列表接口统一传输层(httpx 优先 / 真浏览器 fallback)。
 
-``publicacao`` / ``atualizacao`` / ``proposta`` / ``contratos`` 这 4 个
+``publicacao`` / ``atualizacao`` 这些
 ``/api/consulta/v1/*`` 接口曾被 F5 BIG-IP ASM 拦,需全程真浏览器
 (:class:`BrowserSession`)。**2026-05-28 实测 F5 撤了**,httpx 直连即可,
 比浏览器快 5-10 倍(省掉浏览器启动 ~30s + 每页 JS 引擎开销)。

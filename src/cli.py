@@ -24,8 +24,8 @@ from .exporters.excel import export_to_excel
 from .pipeline.orchestrator import (
     run_atualizacao_incremental,
     run_enrichment,
-    run_proposta_with_itens,
     run_publicacao_with_itens,
+    run_purge_expired,
     run_translate,
 )
 
@@ -117,35 +117,6 @@ def _make_progress_sink():
         elif event == "fetcher.atualizacao.not_found":
             p = x.get("page", "?")
             click.echo(f"[{ts}] atualizacao page={p} → 404,结束", err=True)
-        # ─── proposta fetcher 事件 ─────────────────────────────────
-        elif event == "fetcher.proposta.run":
-            df = x.get("data_final", "?")
-            mods = x.get("modalidades", [])
-            click.echo(
-                f"[{ts}] 开始抓取(proposta 还能投标)data_final={df} "
-                f"modalidades={mods} page_size={x.get('page_size')}",
-                err=True,
-            )
-        elif event == "fetcher.proposta.done":
-            m = x.get("modalidade", "?")
-            p = x.get("page", "?")
-            tp = x.get("total_paginas", "?")
-            r = x.get("records_in_page", 0) or 0
-            tr = x.get("total_registros", "?")
-            state["fetched_total"] += r if isinstance(r, int) else 0
-            click.echo(
-                f"[{ts}] proposta mod={m:<3} page={p}/{tp:<3}  本页 {r:>3} 条  |  "
-                f"累计 {state['fetched_total']} (服务端 {tr})",
-                err=True,
-            )
-        elif event == "fetcher.proposta.empty_page":
-            m = x.get("modalidade", "?")
-            p = x.get("page", "?")
-            click.echo(f"[{ts}] proposta mod={m} page={p} → 空页,跳过", err=True)
-        elif event == "fetcher.proposta.not_found":
-            m = x.get("modalidade", "?")
-            p = x.get("page", "?")
-            click.echo(f"[{ts}] proposta mod={m} page={p} → 404,跳过", err=True)
         # ─── contratos fetcher 事件 ────────────────────────────────
         elif event == "fetcher.contratos.run":
             ds = x.get("date_start", "?")
@@ -267,7 +238,8 @@ def _make_progress_sink():
             click.echo(f"[{ts}] ⚠ 未配置 DEEPSEEK_API_KEY,将回退离线词典翻译", err=True)
         elif event == "pipeline.translate.progress":
             click.echo(
-                f"[{ts}]   已翻 {x.get('done', 0)}/{x.get('total', 0)}({x.get('model')})...",
+                f"[{ts}]   已翻 {x.get('done', 0)}/{x.get('total', 0)}"
+                f"(API {x.get('api', 0)} / 离线 {x.get('offline', 0)})...",
                 err=True,
             )
         elif event == "pipeline.translate.done":
@@ -749,153 +721,6 @@ def fetch_atualizacao_cmd(
             logger.remove(progress_sink_id)
 
 
-# ─── fetch-proposta(投标期内的招标)────────────────────────────────────
-
-
-@cli.command("fetch-proposta")
-@click.option(
-    "--data-final",
-    "data_final",
-    default=None,
-    help="投标截止日上限 YYYY-MM-DD;不传时用 today。实测语义:返回截止日 ≤ 该日期的招标",
-)
-@click.option(
-    "--modalidade",
-    "modalidade_codes",
-    type=int,
-    multiple=True,
-    help="modalidade 代码,可多次传;不传时用 modalidades.yaml 的 default_iter",
-)
-@click.option("--page-size", type=int, default=None, help="每页条数")
-@click.option(
-    "--cache-dir",
-    type=click.Path(),
-    default="./data/raw",
-    show_default=True,
-    help="原始 JSON 缓存根目录",
-)
-@click.option(
-    "--limit",
-    type=int,
-    default=None,
-    help="最多处理多少条主表 record(调试用)",
-)
-@click.option(
-    "--itens-concurrency",
-    type=int,
-    default=5,
-    show_default=True,
-    help="明细 fetcher 的最大并发数",
-)
-@click.option(
-    "--skip-itens",
-    is_flag=True,
-    default=False,
-    help="只拉主表,不拉明细(更快)",
-)
-@click.option(
-    "--progress/--no-progress",
-    default=True,
-    show_default=True,
-    help="实时进度行打到 stderr",
-)
-def fetch_proposta_cmd(
-    data_final: str | None,
-    modalidade_codes: tuple[int, ...],
-    page_size: int | None,
-    cache_dir: str,
-    limit: int | None,
-    itens_concurrency: int,
-    skip_itens: bool,
-    progress: bool,
-) -> None:
-    """抓取"投标截止日 ≤ data_final"的招标(实测,跟 docs 描述有出入)。
-
-    \b
-    proposta 是"快照型"查询,不涉及 cursor — 每天跑一次,
-    新 pncp_id 入库,已入库的被 UPSERT 到最新状态。
-    业务方可用 record 内的 dataEncerramentoProposta(精确到时分秒)做二次筛选,
-    比如"截止日 ≥ now() 的才是真的还能投"。
-
-    \b
-    示例:
-        python -m src.cli fetch-proposta                          # data_final=today
-        python -m src.cli fetch-proposta --data-final 2026-06-01 --modalidade 6 --limit 20
-    """
-    from datetime import datetime as _dt
-
-    if data_final is None:
-        df = _dt.utcnow().date()
-    else:
-        try:
-            df = date.fromisoformat(data_final)
-        except ValueError as exc:
-            raise click.BadParameter(f"日期格式必须是 YYYY-MM-DD: {exc}") from exc
-
-    codes: list[int] | None = list(modalidade_codes) or None
-    cache_root = Path(cache_dir).resolve()
-
-    progress_sink_id: int | None = None
-    if progress:
-        logger.remove()
-        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
-    _t0 = time.perf_counter()
-    try:
-        counters = asyncio.run(
-            run_proposta_with_itens(
-                df,
-                codes,
-                page_size=page_size,
-                cache_root=cache_root,
-                limit=limit,
-                itens_concurrency=itens_concurrency,
-                skip_itens=skip_itens,
-            )
-        )
-        rule_hits = counters.get("rule_hits", {})
-        tag_hits = counters.get("tag_hits", {})
-        click.echo(
-            "\nDone: "
-            f"data_final={df.isoformat()}  "
-            f"kept={counters['contratacoes_kept']}  "
-            f"filtered={counters['contratacoes_filtered']}  "
-            f"itens={counters['itens']}  "
-            f"mode={counters['filter_mode']}",
-            err=True,
-        )
-        log_stage("采集-还能投(proposta)", "OK",
-                  f"标={counters['contratacoes_kept']} 明细={counters['itens']}",
-                  time.perf_counter() - _t0)
-        if rule_hits:
-            click.echo(
-                "  硬过滤命中: " + ", ".join(f"{k}={v}" for k, v in sorted(rule_hits.items())),
-                err=True,
-            )
-        if tag_hits:
-            click.echo(
-                "  软标注命中: " + ", ".join(f"{k}={v}" for k, v in sorted(tag_hits.items())),
-                err=True,
-            )
-    finally:
-        if progress_sink_id is not None:
-            logger.remove(progress_sink_id)
-
-
-# ─── fetch-contratos(已签合同)────────────────────────────────────────
-
-
-# ─── fetch-pca(年度采购计划)──────────────────────────────────────────
-
-
-# ─── load-pca-cache(从已落盘的 raw 救回 PCA 入库)────────────────────────
-
-
-# ─── fetch-catalogo(Compras.gov.br CATMAT/CATSER 目录)──────────────────
-
-
-# ─── fetch-editais(Edital PDF 全文 + 二次过滤)──────────────────────
-
-
 # ─── translate(标的葡→中,DeepSeek)──────────────────────────────────
 
 
@@ -907,13 +732,22 @@ def fetch_proposta_cmd(
     help="最多翻多少条不同标的(调试用;不传则全部未缓存的)",
 )
 @click.option("--batch-size", type=int, default=None, help="每批条数(默认 settings.translation.batch_size)")
+@click.option("--active-only/--no-active-only", default=True, show_default=True,
+              help="只翻未过期(截止>=今天)的标(默认开;--no-active-only 关)")
+@click.option("--cny-min", type=float, default=200000.0, show_default=True,
+              help="只翻金额(CNY)>= 此值(默认 20万;设 0 放开下限)")
+@click.option("--cny-max", type=float, default=2000000.0, show_default=True,
+              help="只翻金额(CNY)<= 此值(默认 200万)")
 @click.option(
     "--progress/--no-progress",
     default=True,
     show_default=True,
     help="进度行打到 stderr",
 )
-def translate_cmd(limit: int | None, batch_size: int | None, progress: bool) -> None:
+def translate_cmd(
+    limit: int | None, batch_size: int | None,
+    active_only: bool, cny_min: float | None, cny_max: float | None, progress: bool,
+) -> None:
     """把招标标的(葡语)批量翻成中文,写入翻译缓存(供导出 Excel 用)。
 
     \b
@@ -932,7 +766,10 @@ def translate_cmd(limit: int | None, batch_size: int | None, progress: bool) -> 
         progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
     _t0 = time.perf_counter()
     try:
-        counters = asyncio.run(run_translate(limit=limit, batch_size=batch_size))
+        counters = asyncio.run(run_translate(
+            limit=limit, batch_size=batch_size,
+            active_only=active_only, cny_min=cny_min, cny_max=cny_max,
+        ))
         click.echo(
             f"\nDone: 待翻 {counters['to_translate']}  "
             f"API {counters['translated_api']}  离线 {counters['translated_offline']}  "
@@ -1012,6 +849,47 @@ def enrich_cmd(
         )
         log_stage("富化(enrich)", "OK",
                   f"region={counters['region_filled']} fx={counters['fx_filled']} 汇率={rate}",
+                  time.perf_counter() - _t0)
+    finally:
+        if progress_sink_id is not None:
+            logger.remove(progress_sink_id)
+
+
+# ─── purge-expired(删已过期招标 + 写删除日志,周更前置)──────────────────
+
+
+@cli.command("purge-expired")
+@click.option(
+    "--progress/--no-progress",
+    default=True,
+    show_default=True,
+    help="进度行打到 stderr",
+)
+def purge_expired_cmd(progress: bool) -> None:
+    """删除已过期招标(截止日 < 今天)及其明细;被删标的信息写入 logs/expired_purged.csv。
+
+    \b
+    周更增量更新的前置步骤:先清掉库里已过期的标,避免越攒越多。
+    不删:截止日为今天/未来、2099 无截止、截止日缺失的标。
+
+    \b
+    示例:
+        python -m src.cli purge-expired
+    """
+    _t0 = time.perf_counter()
+    progress_sink_id: int | None = None
+    if progress:
+        logger.remove()
+        progress_sink_id = logger.add(_make_progress_sink(), level="INFO")
+    try:
+        counters = run_purge_expired()
+        click.echo(
+            f"\nDone: 过期删除 标={counters['contratacoes_deleted']}  "
+            f"明细={counters['itens_deleted']}  → {counters['log_path']}",
+            err=True,
+        )
+        log_stage("清理过期(purge-expired)", "OK",
+                  f"删标={counters['contratacoes_deleted']} 删明细={counters['itens_deleted']}",
                   time.perf_counter() - _t0)
     finally:
         if progress_sink_id is not None:
@@ -1151,7 +1029,16 @@ def filter_cmd(mode: str | None, progress: bool) -> None:
     default=False,
     help="招标主表里隐藏已过期(投标截止<今天)的标的",
 )
-def export_excel_cmd(out_path: str, limit: int | None, hide_expired: bool) -> None:
+@click.option("--active-only/--no-active-only", default=True, show_default=True,
+              help="只导未过期(截止>=今天)的标(默认开;--no-active-only 关)")
+@click.option("--cny-min", type=float, default=200000.0, show_default=True,
+              help="只导金额(CNY)>= 此值(默认 20万;设 0 放开下限)")
+@click.option("--cny-max", type=float, default=2000000.0, show_default=True,
+              help="只导金额(CNY)<= 此值(默认 200万)")
+def export_excel_cmd(
+    out_path: str, limit: int | None, hide_expired: bool,
+    active_only: bool, cny_min: float | None, cny_max: float | None,
+) -> None:
     """把数据库导成多 Sheet Excel 数据快照(业务方直接打开分析)。
 
     \b
@@ -1166,7 +1053,10 @@ def export_excel_cmd(out_path: str, limit: int | None, hide_expired: bool) -> No
         python -m src.cli export-excel --limit 5000         # 轻量版(每页≤5000行)
     """
     _t0 = time.perf_counter()
-    stats = export_to_excel(out_path, limit=limit, hide_expired=hide_expired)
+    stats = export_to_excel(
+        out_path, limit=limit, hide_expired=hide_expired,
+        active_only=active_only, cny_min=cny_min, cny_max=cny_max,
+    )
     click.echo(f"\n已导出: {Path(out_path).resolve()}", err=True)
     for sheet, n in stats.items():
         click.echo(f"  {sheet}: {n} 行", err=True)

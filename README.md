@@ -46,8 +46,13 @@ powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1
 powershell -ExecutionPolicy Bypass -File scripts\run_weekly.ps1 -AllMode
 ```
 
-- **首次** `-First` 走 `fetch-proposta`,抓截止日在未来一个月内、当前还能投的开放标(不灌历史发布数据)。
-- **周更**(无参)走 `fetch-atualizacao` 增量(`sync_cursor` 记位点)+ 刷新开放标快照。
+流水线(两种模式都按此漏斗):**爬取 → 富化(算CNY)→ 筛(未过期 + 20-200万CNY)→ 翻译该集 → 出 `report_<日期>.xlsx` → 实物设备/产品逻辑 → 出 `巴西设备产品采购标_20-200万CNY_<日期>.xlsx`**。
+
+- 爬取**固定按发布日期**(不可调)。**首次** `-First` 走 `fetch-and-store`,抓过去**一个月发布**的标及明细。
+- **周更**(无参):①`purge-expired` 删已过期标(截止日<今天)+明细,写 `logs/expired_purged.csv`;②`fetch-atualizacao` 查已有标更新;③`fetch-and-store` 爬上一周发布的标。
+- 「筛选」是出表/翻译时的过滤(`--active-only --cny-min 200000 --cny-max 2000000`),不物理删库;翻译只翻这个集省 DeepSeek 费用;设备表用动态当天判未过期。
+- **两个产出都带日期戳**(report 与设备表共用同一个 `RUN_STAMP`)。
+- 日志:全过程落 `logs/run_<时间戳>.log`;各阶段指标(清理过期/采集/富化/翻译/导出/设备表)落 `logs/pipeline_metrics.csv`。
 - `-OpenHorizonDays N` 调开放标快照的未来跨度(默认 30 天)。
 - 计划任务示例(每周一 07:00)见 `scripts\run_weekly.ps1` 头部注释;任一步失败脚本返回非 0。
 

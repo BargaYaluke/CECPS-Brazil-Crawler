@@ -3,7 +3,7 @@
 设备/产品采购标筛选(只用标的本身信息,不做企业匹配)
 
 口径:
-  1) 未过期      data_encerramento_proposta > 今天(2026-06-18)
+  1) 未过期      data_encerramento_proposta > 今天(动态取当天)
   2) 金额区间    20万 ≤ valor_cny_estimado ≤ 200万 CNY(1 BRL≈1.34135 CNY)
   3) 实物采购    itens 中 Material(M)金额占比 ≥ 0.8  →  候选池
                  ⚠ 源数据部分服务项被误标 M(如理疗/住宿/仲裁/铺路),
@@ -13,7 +13,7 @@
 
 产物:data/exports/巴西设备产品采购标_20-200万CNY.xlsx
 """
-import sys, json, asyncio, time
+import sys, os, json, asyncio, time
 from pathlib import Path
 from datetime import date
 import sqlite3
@@ -32,9 +32,11 @@ MODE = "all" if len(sys.argv) > 1 and sys.argv[1].lower() in ("all", "全部", "
 
 DB = ROOT / "data" / "procurement.db"
 _suffix = "_全量含过期" if MODE == "all" else ""
-OUT = ROOT / "data" / "exports" / f"巴西设备产品采购标_20-200万CNY{_suffix}.xlsx"
+# 时间戳:周更脚本用 RUN_STAMP 让 report 和设备表共用同一个戳;手动跑则取当天
+_stamp = os.environ.get("RUN_STAMP") or date.today().isoformat()
+OUT = ROOT / "data" / "exports" / f"巴西设备产品采购标_20-200万CNY{_suffix}_{_stamp}.xlsx"
 CLS_JSON = ROOT / "analysis" / "equipment_bids" / f"classifications{_suffix}.json"
-TODAY = "2026-06-18"
+TODAY = date.today().isoformat()   # 动态取当天(周更每次跑都是当天)
 CNY_LO, CNY_HI = 200_000, 2_000_000
 MAT_SHARE = 0.8
 
@@ -188,7 +190,7 @@ def fix_scheme(u):
     if not u or u.lower() == "nan": return ""
     return u if u.startswith("http") else "http://" + u
 
-today = date(2026, 6, 18)
+today = date.today()
 def enrich(df):
     df = df.merge(meepp, left_on="pncp_id", right_index=True, how="left")
     df["ME/EPP限制"] = df["ME/EPP限制"].fillna("无限制")

@@ -160,6 +160,7 @@ def _stream_columns(
     order_by: Any | None = None,
     limit: int | None = None,
     extra_keys: tuple[str, ...] = (),
+    where: tuple[Any, ...] = (),
     compute: Callable[[dict[str, Any]], None] | None = None,
     yield_size: int = 2000,
 ) -> Iterator[dict[str, Any]]:
@@ -181,6 +182,8 @@ def _stream_columns(
             real_keys.append(ek)
 
     stmt = select(*[getattr(model, k) for k in real_keys])
+    if where:
+        stmt = stmt.where(*where)
     if order_by is not None:
         stmt = stmt.order_by(order_by)
     if limit:
@@ -234,7 +237,13 @@ _ITENS_COLS: list[ColumnDef] = [
 
 
 def export_to_excel(
-    out_path: str | Path, *, limit: int | None = None, hide_expired: bool = False
+    out_path: str | Path,
+    *,
+    limit: int | None = None,
+    hide_expired: bool = False,
+    active_only: bool = False,
+    cny_min: float | None = None,
+    cny_max: float | None = None,
 ) -> dict[str, int]:
     """把数据库导成多 Sheet Excel。
 
@@ -242,6 +251,8 @@ def export_to_excel(
         out_path: 输出 ``.xlsx`` 路径。
         limit: 每张表最多导多少行(``None`` = 全部)。
         hide_expired: True 则招标主表里**隐藏已过期**(投标截止 < 今天)的标的。
+        active_only: True 则只导**未过期**(截止 >= 今天 00:00)的标(招标主表+采购明细)。
+        cny_min / cny_max: 按 ``valor_cny_estimado`` 过滤金额区间(需先跑 enrich 的 fx)。
 
     Returns:
         各 Sheet 行数统计。
@@ -258,6 +269,22 @@ def export_to_excel(
 
     stats: dict[str, int] = {}
     today = date.today()
+
+    # 工作集过滤(未过期 + CNY 区间);各条件可选,不传则导全量
+    ctr_conds: list[Any] = []
+    if active_only:
+        ctr_conds.append(Contratacao.data_encerramento_proposta.is_not(None))
+        ctr_conds.append(
+            Contratacao.data_encerramento_proposta >= datetime.combine(today, datetime.min.time())
+        )
+    if cny_min is not None:
+        ctr_conds.append(Contratacao.valor_cny_estimado >= cny_min)
+    if cny_max is not None:
+        ctr_conds.append(Contratacao.valor_cny_estimado <= cny_max)
+    # 采购明细按上面过滤出的招标 pncp_id 收口(子查询,避开 SQLite IN 变量上限)
+    item_where: tuple[Any, ...] = (
+        (Item.pncp_id.in_(select(Contratacao.pncp_id).where(*ctr_conds)),) if ctr_conds else ()
+    )
 
     with session_scope() as session:
         # 一次性载入翻译缓存({hash: 中文}),命中用 DeepSeek 译文,未命中回退离线词典
@@ -279,6 +306,7 @@ def export_to_excel(
             _CONTRATACOES_COLS,
             order_by=Contratacao.data_publicacao_pncp.desc(),
             limit=limit,
+            where=tuple(ctr_conds),
             compute=_compute_contratacao,
         )
         if hide_expired:
@@ -292,7 +320,7 @@ def export_to_excel(
             wb,
             "采购明细",
             _ITENS_COLS,
-            _stream_columns(session, Item, _ITENS_COLS, limit=limit),
+            _stream_columns(session, Item, _ITENS_COLS, limit=limit, where=item_where),
         )
 
     # 3. 过滤审计(从 Parquet)
