@@ -232,17 +232,26 @@ async def _run_list_pipeline(
     limit: int | None,
     itens_concurrency: int,
     skip_itens: bool = False,
+    skip_expired: bool = True,
 ) -> dict[str, Any]:
     """从 ``fetch_iter`` 收 publicacao-shape records → filter → upsert → itens。
 
     给 :func:`run_publicacao_with_itens` 和 :func:`run_atualizacao_incremental`
     共用。
+
+    ``skip_expired`` (默认 True):入库前先跳过**已过期**标(截止日 < 今天 00:00),
+    判定与 :func:`run_purge_expired` 完全一致 —— 不入库、不拉明细。否则按发布日抓回来的
+    标里那批"刚发布但截止日已过"的会先入库、白拉一遍明细,下一轮 purge 又把它们删掉。
     """
     engine = get_default_engine()
     filter_cfg = get_filter_settings()
     filter_mode: str = filter_cfg["mode"]
     filtered_log_dir = Path(filter_cfg["filtered_log_dir"])
     set_field_to_tag_id = _set_field_to_tag_id()
+
+    # 与 run_purge_expired 一致:今天 00:00 之前截止 = 已过期。date.today() 取本机日期。
+    expired_cutoff = datetime.combine(date.today(), datetime.min.time())
+    expired_skipped = 0
 
     rule_hits: Counter[str] = Counter()
     tag_hits: Counter[str] = Counter()
@@ -262,6 +271,17 @@ async def _run_list_pipeline(
     for r in raw_records:
         raw_model = PublicacaoRaw.model_validate(r)
         ci = raw_model.to_contratacao_in(raw_json=r)
+
+        # 已过期(截止日 < 今天 00:00)直接跳过:不入库、不拉明细。
+        # 保留截止日为 NULL(时效未知)与今天/未来的,与 purge 判定一致。
+        if (
+            skip_expired
+            and ci.data_encerramento_proposta is not None
+            and ci.data_encerramento_proposta < expired_cutoff
+        ):
+            expired_skipped += 1
+            continue
+
         result = engine.evaluate(ci.model_dump())
 
         if result.keep:
@@ -289,6 +309,7 @@ async def _run_list_pipeline(
     logger.bind(
         kept=len(contratacoes_to_upsert),
         filtered=len(filtered_for_log),
+        expired_skipped=expired_skipped,
         rule_hits=dict(rule_hits),
         tag_hits=dict(tag_hits),
         mode=filter_mode,
@@ -348,6 +369,7 @@ async def _run_list_pipeline(
     counters: dict[str, Any] = {
         "contratacoes_kept": len(contratacoes_to_upsert),
         "contratacoes_filtered": len(filtered_for_log),
+        "expired_skipped": expired_skipped,
         "rule_hits": dict(rule_hits),
         "tag_hits": dict(tag_hits),
         "itens": total_items,
@@ -566,6 +588,7 @@ async def run_enrichment(
     do_fx: bool = True,
     limit: int | None = None,
     redo: bool = False,
+    fx_rate: float | None = None,
 ) -> dict[str, Any]:
     """富化已入库 contratacoes(两块,各自可开关):
 
@@ -576,6 +599,8 @@ async def run_enrichment(
         do_region / do_fx: 各块开关。
         limit: 各自最多处理多少行。
         redo: True 则连已富化过的也重做。
+        fx_rate: 显式指定 ``1 BRL = ? CNY``。传了就**直接用,跳过在线汇率 API**
+            (避免接口限流/故障卡住整条流水线);``None`` 时才在线取。
 
     Returns:
         ``{"region_filled", "fx_filled", "fx_rate"}``。
@@ -601,7 +626,12 @@ async def run_enrichment(
 
     # ─── fx(BRL→CNY)────────────────────────────────────────────────
     if do_fx:
-        rate = await fetch_brl_to_cny_rate()
+        # 显式传入汇率 → 直接用,跳过在线 API(避免限流/接口故障);否则在线取。
+        if fx_rate is not None:
+            rate = fx_rate
+            logger.bind(rate=rate, source="manual").info("pipeline.enrichment.fx_manual")
+        else:
+            rate = await fetch_brl_to_cny_rate()
         counters["fx_rate"] = rate
         if rate is not None:
             with session_scope() as session:

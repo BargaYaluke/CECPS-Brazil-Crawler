@@ -1,0 +1,18 @@
+# Linux 生产依赖（lite 流水线实际用到的直接依赖）。
+# 由 requirements.txt(Windows pip freeze, UTF-16) 精简而来：
+#   - 去掉 Windows-only 包(win32_setctime 等)和开发工具(mypy/ruff/pytest)
+#   - 去掉仅作 F5 兜底的 playwright(默认 transport=auto 走 httpx；F5 复活再单独装)
+# 安装：pip install -r requirements-linux.txt
+httpx==0.28.1
+SQLAlchemy==2.0.50
+pydantic==2.13.4
+pydantic-settings==2.14.1
+python-dotenv==1.2.2
+PyYAML==6.0.3
+openpyxl==3.1.5
+click==8.4.1
+loguru==0.7.3
+tenacity==9.1.4
+tzdata==2026.2
+tzlocal==5.3.1
+pandas>=2.2,<2.4

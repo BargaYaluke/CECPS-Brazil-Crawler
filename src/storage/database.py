@@ -13,7 +13,7 @@ from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -47,7 +47,23 @@ def get_engine(database_url: str | None = None) -> Engine:
         if db_path.parent and not db_path.parent.exists():
             db_path.parent.mkdir(parents=True, exist_ok=True)
 
-    engine = create_engine(database_url, future=True, echo=False)
+    is_sqlite_file = database_url.startswith("sqlite:///") and ":memory:" not in database_url
+    # SQLite 默认 busy_timeout=0 — 一遇锁立刻 "database is locked"。
+    # 给 30s 等待 + WAL,让短暂并发(读写交叠)排队而非直接崩。
+    connect_args = {"timeout": 30} if database_url.startswith("sqlite") else {}
+    engine = create_engine(
+        database_url, future=True, echo=False, connect_args=connect_args
+    )
+
+    if is_sqlite_file:
+        @event.listens_for(engine, "connect")
+        def _set_sqlite_pragma(dbapi_conn, _conn_record):  # noqa: ANN001
+            cur = dbapi_conn.cursor()
+            cur.execute("PRAGMA journal_mode=WAL")     # 读写不互锁
+            cur.execute("PRAGMA busy_timeout=30000")   # 遇锁等待 30s 再放弃
+            cur.execute("PRAGMA synchronous=NORMAL")   # WAL 下安全且更快
+            cur.close()
+
     logger.bind(database_url=database_url).info("storage.engine.created")
     return engine
 

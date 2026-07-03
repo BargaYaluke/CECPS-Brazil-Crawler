@@ -322,11 +322,13 @@ def _make_progress_sink():
         elif event == "pipeline.filter.done":
             kept = x.get("kept", 0)
             filtered = x.get("filtered", 0)
+            expired = x.get("expired_skipped", 0)
             rh = x.get("rule_hits", {})
             th = x.get("tag_hits", {})
             mode = x.get("mode", "?")
             click.echo(
-                f"[{ts}] 过滤完成 (mode={mode}): keep={kept}  filtered={filtered}",
+                f"[{ts}] 过滤完成 (mode={mode}): keep={kept}  filtered={filtered}"
+                f"  已过期跳过={expired}",
                 err=True,
             )
             if rh:
@@ -797,6 +799,8 @@ def translate_cmd(
 @click.option("--fx", is_flag=True, default=False, help="只跑汇率富化(BRL→CNY)")
 @click.option("--limit", type=int, default=None, help="region/fx 各自最多处理多少行")
 @click.option("--redo", is_flag=True, default=False, help="连已富化过的(对应列非空)也重做")
+@click.option("--fx-rate", "fx_rate", type=float, default=None,
+              help="手动指定 1 BRL=? CNY,跳过在线汇率API(避免限流/接口故障)")
 @click.option(
     "--progress/--no-progress",
     default=True,
@@ -808,6 +812,7 @@ def enrich_cmd(
     fx: bool,
     limit: int | None,
     redo: bool,
+    fx_rate: float | None,
     progress: bool,
 ) -> None:
     """富化已入库 contratacoes:区域 / 汇率(BRL→CNY,设备产品表金额区间必需)。
@@ -837,6 +842,7 @@ def enrich_cmd(
                 do_fx=do_fx,
                 limit=limit,
                 redo=redo,
+                fx_rate=fx_rate,
             )
         )
         rate = counters.get("fx_rate")

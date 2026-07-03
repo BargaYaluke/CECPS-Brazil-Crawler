@@ -13,7 +13,7 @@
 
 产物:data/exports/巴西设备产品采购标_20-200万CNY.xlsx
 """
-import sys, os, json, asyncio, time
+import sys, os, json, asyncio, time, re
 from pathlib import Path
 from datetime import date
 import sqlite3
@@ -22,7 +22,9 @@ import httpx
 from openpyxl.styles import Font, Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
-ROOT = Path(r"C:\巴西爬虫")
+# 仓库根:从本脚本位置推导(<repo>/analysis/equipment_bids/find_bids.py),
+# 跨平台通用 —— 不要写死 C:\... 否则换到 Linux/服务器就打不开库。
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import deepseek_client as ml  # 自包含 DeepSeek 客户端 + 磁盘缓存(本目录)
 
@@ -227,6 +229,18 @@ def order_export(df):
     o.insert(0, "序号", range(1, len(o) + 1))
     return o
 prod_x, svc_x = order_export(prod), order_export(svc)
+
+# 清洗 Excel 非法控制字符:openpyxl 不接受 \x00-\x08 \x0b \x0c \x0e-\x1f,
+# 否则写入时抛 IllegalCharacterError(源数据物品描述里偶有这类控制字符)
+_ILLEGAL_XLSX = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+def _scrub(df):
+    fix = lambda v: _ILLEGAL_XLSX.sub("", v) if isinstance(v, str) else v
+    # pandas 2.1+ 用 DataFrame.map 做逐元素映射(旧版叫 applymap)
+    try:
+        return df.map(fix)
+    except AttributeError:
+        return df.applymap(fix)
+prod_x, svc_x = _scrub(prod_x), _scrub(svc_x)
 
 summ = (prod.groupby("物资类别")
         .agg(标数=("pncp_id", "count"),
